@@ -36,6 +36,12 @@ visionops demo
 uvicorn vision_lifecycle.main:app --app-dir backend --reload
 ```
 
+기본 API 포트 8000이 다른 로컬 서비스에서 사용 중이면 포트를 바꿔 실행한다.
+
+```bash
+uvicorn vision_lifecycle.main:app --app-dir backend --reload --port 8001
+```
+
 별도 터미널에서 UI를 실행한다.
 
 ```bash
@@ -43,6 +49,8 @@ cd frontend
 npm install
 npm run dev
 ```
+
+API를 8001번으로 실행한 경우에는 `VITE_API_PORT=8001 npm run dev`를 사용한다.
 
 브라우저에서 `http://127.0.0.1:5173`를 열고 **MMDetection 데모 시작**을 선택한다. API 문서는 `http://127.0.0.1:8000/docs`에서 확인한다.
 

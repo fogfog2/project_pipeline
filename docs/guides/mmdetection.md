@@ -10,6 +10,12 @@ visionops demo
 uvicorn vision_lifecycle.main:app --app-dir backend --reload
 ```
 
+8000번 포트가 사용 중이면 API를 8001번으로 실행하고, 프런트엔드 proxy에도 같은 포트를 지정한다.
+
+```bash
+uvicorn vision_lifecycle.main:app --app-dir backend --reload --port 8001
+```
+
 다른 터미널에서 UI를 실행한다.
 
 ```bash
@@ -17,6 +23,8 @@ cd frontend
 npm install
 npm run dev
 ```
+
+API를 8001번으로 실행한 경우에는 마지막 줄을 `VITE_API_PORT=8001 npm run dev`로 바꾼다.
 
 UI에서 **MMDetection 데모 시작**을 선택한다. 이 과정은 metadata fixture를 등록한다. 모델 checkpoint, 이미지, 실제 board는 다운로드하지 않는다.
 
