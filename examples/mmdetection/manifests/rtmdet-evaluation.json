@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "external_run_id": "MMDET-RTMDET-COCO-MINI-001",
+  "kind": "evaluation",
+  "name": "RTMDet-tiny native COCO mini evaluation",
+  "status": "completed",
+  "config": {"evaluator_version": "coco-v1", "source": "mmdetection-native"},
+  "metrics": {"bbox_mAP": 0.412, "bbox_AP50": 0.621},
+  "environment": {"framework": "MMDetection", "framework_version": "3.3.0"},
+  "notes": "Set dataset_id and model_id after the local registry objects are created."
+}

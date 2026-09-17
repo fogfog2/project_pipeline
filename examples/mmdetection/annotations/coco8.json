@@ -1,0 +1,17 @@
+{
+  "info": {"description": "Metadata-only lifecycle fixture; images are intentionally not bundled."},
+  "images": [
+    {"id": 1, "file_name": "demo-001.jpg", "width": 640, "height": 480},
+    {"id": 2, "file_name": "demo-002.jpg", "width": 640, "height": 480}
+  ],
+  "categories": [
+    {"id": 1, "name": "person", "supercategory": "human"},
+    {"id": 3, "name": "car", "supercategory": "vehicle"},
+    {"id": 9, "name": "bicycle", "supercategory": "vehicle"}
+  ],
+  "annotations": [
+    {"id": 1, "image_id": 1, "category_id": 1, "bbox": [120, 85, 118, 290], "area": 34220, "iscrowd": 0},
+    {"id": 2, "image_id": 1, "category_id": 3, "bbox": [260, 230, 260, 145], "area": 37700, "iscrowd": 0},
+    {"id": 3, "image_id": 2, "category_id": 9, "bbox": [85, 180, 210, 180], "area": 37800, "iscrowd": 0}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-18T00:00:00Z",
+  "project": {"id": "PRJ-DEMO", "name": "MMDetection RTMDet · YOLOX Demo", "description": "GitHub Pages 정적 예제", "task_kind": "detection"},
+  "overview": {"counts": {"datasets": 1, "models": 2, "runs": 2, "jobs": 0}, "lineage_completeness": 100, "baseline": {"id": "MODEL-YOLOX", "family": "YOLOX-s", "version": "s-coco-demo"}, "candidate": {"id": "MODEL-RTMDET", "family": "RTMDet-tiny", "version": "tiny-coco-demo"}, "recent_runs": [], "next_actions": ["정적 Pages는 내보낸 결과만 조회합니다."]},
+  "models": [{"id": "MODEL-YOLOX", "name": "YOLOX", "family": "YOLOX-s", "version": "s-coco-demo", "format": "mmdetection-pytorch", "precision": "fp32", "alias": "baseline", "runnable": false}, {"id": "MODEL-RTMDET", "name": "RTMDet", "family": "RTMDet-tiny", "version": "tiny-coco-demo", "format": "mmdetection-pytorch", "precision": "fp32", "alias": "candidate", "runnable": false}],
+  "datasets": [{"id": "DS-COCO-MINI", "name": "coco-mini-lifecycle-demo", "version": "v1", "format": "coco", "status": "finalized", "sample_count": 2, "validation": {"status": "passed"}}],
+  "jobs": [],
+  "targets": [
+    {"id": "TARGET-DEMO", "name": "Example target", "version": "demo", "target_kind": "board", "runtime": "TensorRT", "hardware": {"note": "example only"}, "notes": "Static demo data"}
+  ],
+  "runs": [{"id": "RUN-YOLOX", "kind": "evaluation", "name": "YOLOX-s COCO8 evaluation", "status": "completed", "metrics": {"bbox_mAP": 0.398, "latency_ms_p50": 14.3}}, {"id": "RUN-RTMDET", "kind": "evaluation", "name": "RTMDet-tiny COCO8 evaluation", "status": "completed", "metrics": {"bbox_mAP": 0.412, "latency_ms_p50": 11.8}}]
+}

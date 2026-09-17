@@ -1,0 +1,102 @@
+from pathlib import Path
+from time import sleep
+
+from fastapi.testclient import TestClient
+
+from vision_lifecycle.database import Base, engine
+from vision_lifecycle.main import app
+
+
+def test_demo_api_validates_evaluates_and_redacts():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        demo = client.post("/api/v1/projects/demo")
+        assert demo.status_code == 201
+        project_id = demo.json()["id"]
+        validation = client.post(f"/api/v1/projects/{project_id}/inspect-path", json={"path": "examples/mmdetection/annotations/coco8.json"})
+        assert validation.status_code == 200
+        assert validation.json()["detected_format"] == "coco"
+        models = client.get(f"/api/v1/projects/{project_id}/models").json()
+        datasets = client.get(f"/api/v1/projects/{project_id}/datasets").json()
+        rtm = next(model for model in models if model["family"] == "RTMDet-tiny")
+        evaluation = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
+            "model_id": rtm["id"], "dataset_id": datasets[0]["id"],
+            "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",
+        })
+        assert evaluation.status_code == 201
+        assert evaluation.json()["run"]["metrics"]["bbox_AP50"] == 1.0
+        full = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
+            "model_id": rtm["id"], "dataset_id": datasets[0]["id"],
+            "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json", "protocol": "coco_full",
+        })
+        assert full.status_code == 201
+        assert full.json()["run"]["config"]["evaluator_version"] == "coco-full-v1"
+        assert full.json()["result"]["bbox_mAP"] == 1.0
+        exported = client.get(f"/api/v1/projects/{project_id}/export").json()
+        assert "storage_root" not in exported["project"]
+        assert "annotation_path" not in exported["datasets"][0]
+        assert "artifact_path" not in exported["models"][0]
+
+
+def test_mock_board_job_completes():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects/demo").json()["id"]
+        created = client.post(f"/api/v1/projects/{project_id}/jobs", json={"runner_id": "mock-board"})
+        assert created.status_code == 201
+        job_id = created.json()["id"]
+        status = "queued"
+        for _ in range(10):
+            jobs = client.get(f"/api/v1/projects/{project_id}/jobs").json()
+            status = next(job["status"] for job in jobs if job["id"] == job_id)
+            if status == "completed":
+                break
+            sleep(0.01)
+        assert status == "completed"
+
+
+def test_result_import_is_idempotent_and_detects_conflict():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects/demo").json()["id"]
+        manifest = {"schema_version": "1.0", "external_run_id": "EXT-1", "kind": "board", "name": "board result", "metrics": {"latency_ms_p90": 20}}
+        first = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": manifest})
+        second = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": manifest})
+        changed = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": {**manifest, "metrics": {"latency_ms_p90": 21}}})
+        assert first.json()["status"] == "created"
+        assert second.json()["status"] == "existing"
+        assert changed.status_code == 409
+
+
+def test_target_profile_can_be_linked_to_board_import():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects/demo").json()["id"]
+        target = client.post(f"/api/v1/projects/{project_id}/targets", json={
+            "name": "Jetson Orin NX", "version": "r36", "runtime": "TensorRT", "hardware": {"power_mode": "15W"},
+        })
+        assert target.status_code == 201
+        linked = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": {
+            "schema_version": "1.0", "external_run_id": "BOARD-TARGET-1", "kind": "board", "name": "latency",
+            "target_profile_id": target.json()["id"], "metrics": {"latency_ms_p50": 4.2},
+        }})
+        assert linked.status_code == 201
+        assert linked.json()["run"]["config"]["target_profile_id"] == target.json()["id"]
+
+
+def test_classification_evaluation_api():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "classification-api", "task_kind": "classification"}).json()["id"]
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "classifier", "version": "v1", "family": "simple-classifier", "task_kind": "classification", "format": "onnx"}).json()
+        response = client.post(f"/api/v1/projects/{project_id}/evaluations/classification", json={
+            "model_id": model["id"],
+            "records": [{"image_id": "1", "ground_truth": "cat", "prediction": "cat"}, {"image_id": "2", "ground_truth": "dog", "prediction": "cat"}],
+        })
+        assert response.status_code == 201
+        assert response.json()["result"]["top1_accuracy"] == 0.5

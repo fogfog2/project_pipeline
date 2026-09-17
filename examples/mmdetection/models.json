@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "framework": "MMDetection",
+  "framework_version": "3.3.0",
+  "models": [
+    {
+      "family": "RTMDet-tiny",
+      "mim_config": "rtmdet_tiny_8xb32-300e_coco",
+      "config_path": "configs/rtmdet/rtmdet_tiny_8xb32-300e_coco.py",
+      "task_kind": "detection",
+      "dataset": "COCO"
+    },
+    {
+      "family": "YOLOX-s",
+      "mim_config": "yolox_s_8xb8-300e_coco",
+      "config_path": "configs/yolox/yolox_s_8xb8-300e_coco.py",
+      "task_kind": "detection",
+      "dataset": "COCO"
+    }
+  ]
+}

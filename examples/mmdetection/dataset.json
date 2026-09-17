@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "name": "coco-mini-lifecycle-demo",
+  "task_kind": "detection",
+  "format": "coco",
+  "annotation_path": "annotations/coco8.json",
+  "sample_count": 2,
+  "class_names": ["person", "bicycle", "car"],
+  "validation": {"status": "passed", "missing_labels": 0, "purpose": "onboarding-fixture"}
+}

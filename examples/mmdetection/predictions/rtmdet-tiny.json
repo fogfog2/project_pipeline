@@ -1,0 +1,5 @@
+[
+  {"image_id": 1, "category_id": 1, "bbox": [120, 84, 119, 292], "score": 0.93},
+  {"image_id": 1, "category_id": 3, "bbox": [258, 232, 262, 142], "score": 0.89},
+  {"image_id": 2, "category_id": 9, "bbox": [87, 179, 206, 181], "score": 0.86}
+]
