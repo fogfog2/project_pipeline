@@ -69,6 +69,10 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path, mon
         eval_set = client.post(f"/api/v1/projects/{project_id}/evaluation-sets", json={"name": "core", "version": "v1", "dataset_id": dataset["id"], "purpose": "core", "definition": {"items": [1]}}).json()
         calibration = client.post(f"/api/v1/projects/{project_id}/calibration-sets", json={"name": "representative", "version": "v1", "dataset_id": dataset["id"], "sampling": {"count": 1}, "preprocessing": {"color": "rgb"}}).json()
         assert all(item["content_hash"].startswith("sha256:") for item in (label, split, eval_set, calibration))
+        assert calibration["validation"]["status"] == "passed"
+        invalid_calibration = client.post(f"/api/v1/projects/{project_id}/calibration-sets", json={"name": "invalid", "version": "v1", "dataset_id": dataset["id"], "sampling": {"items": [999, 999], "strategy": "random"}, "preprocessing": {}}).json()
+        assert invalid_calibration["validation"]["status"] == "failed"
+        assert client.post(f"/api/v1/projects/{project_id}/calibration-sets/{invalid_calibration['id']}/validate").json()["validation"]["status"] == "failed"
         finalized = client.post(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/finalize")
         assert finalized.status_code == 200
         assert finalized.json()["status"] == "finalized"

@@ -45,7 +45,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S06 | §8: field 실패 사례를 다음 dataset으로 연결 | 미구현 | FieldDataBatch, prediction/수정 label/원본 모델 관계, 후보 승격 이력 없음 |
 | S07 | §9: 외부 학습 결과 등록 | 부분 구현 | 실험 화면/API에서 Run.config/environment/details와 외부 ID를 등록하고 동일 내용은 idempotent, 다른 내용은 충돌로 처리하며 모델 등록 화면에서 외부 `training` Run을 명시적으로 선택해 연결한다. commit/seed/loss/split typed 규격, unknown 추적, parent 참조 검증 미완성. `importer.py`, `main.py` |
 | S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 모델·config 파일의 SHA-256 provenance, 소유 entity, 원본과 관리 artifact 사본, 교체 시 superseded 이력, 재검증과 drift 시 inference 차단, alias 변경 사유·이력 조회, 원본 mount 부재 시 관리 사본 inference fallback을 제공한다. ONNX metadata 삽입/검증은 남아 있다 |
-| S09 | §11: 독립 calibration 버전·통계 | 미구현 | CalibrationSetVersion과 sampling/전처리/분포 추적 없음 |
+| S09 | §11: 독립 calibration 버전·통계 | 부분 구현 | CalibrationSetVersion에 sample 수·중복·Dataset item·strategy/seed·전처리 선언 validation/statistics를 저장하고 재검사 API/UI를 제공한다. 실제 이미지 분포·tensor 통계와 대규모 sampling job은 남아 있다 |
 | S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | source/output model, calibration, encoding과 명시적 source/output role을 저장하고 matrix UI의 기본 입력을 제공한다. method별 matrix와 encoding artifact 검증은 남아 있다 |
 | S11 | §11: Quantization Loss·Target Gap 계산 | 부분 구현 | baseline·QuantSim·target 평가의 dataset/evaluator/protocol/scope/class mapping 계약을 검사해 Quantization Loss·Target Gap을 Run으로 저장한다. 다중 metric/critical class와 target 측정 범위 검증은 남아 있다 |
 | S12 | §12: 분류·검출 공통 평가 | 부분 구현 | 외부 prediction 기반 분류, AP50, pycocotools bbox 평가와 invalid image/class/bbox/score 검사, 명시적 ONNX image record batch 평가가 존재한다. 대규모 평가를 독립 worker job으로 실행하는 흐름과 고급 전처리/후처리 profile은 남아 있다 |

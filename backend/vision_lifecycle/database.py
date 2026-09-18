@@ -59,6 +59,9 @@ def init_database() -> None:
         split_columns = {column["name"] for column in inspect(engine).get_columns("split_versions")}
         if "validation" not in split_columns:
             connection.exec_driver_sql("ALTER TABLE split_versions ADD COLUMN validation JSON NOT NULL DEFAULT '{}'")
+        calibration_columns = {column["name"] for column in inspect(engine).get_columns("calibration_set_versions")}
+        if "validation" not in calibration_columns:
+            connection.exec_driver_sql("ALTER TABLE calibration_set_versions ADD COLUMN validation JSON NOT NULL DEFAULT '{}'")
         model_columns = {column["name"] for column in inspect(engine).get_columns("model_versions")}
         if "status" not in model_columns:
             connection.exec_driver_sql("ALTER TABLE model_versions ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'experimental'")

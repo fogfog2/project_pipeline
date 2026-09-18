@@ -32,6 +32,7 @@ from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
 from .split_validation import validate_split_definition
+from .calibration_validation import validate_calibration_definition
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 from .audit import record_audit
 
@@ -682,9 +683,25 @@ def list_calibration_sets(project_id: str, session: Session = Depends(get_sessio
 @app.post("/api/v1/projects/{project_id}/calibration-sets", status_code=201)
 def create_calibration_set(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
     require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
+    dataset = _version_dataset(session, project_id, payload.dataset_id)
     value = {"name": payload.name, "version": payload.version, "sampling": payload.sampling, "preprocessing": payload.preprocessing, "dataset_id": payload.dataset_id}
-    item = CalibrationSetVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, sampling=payload.sampling, preprocessing=payload.preprocessing, status=payload.status, content_hash=_version_hash(value))
+    validation = validate_calibration_definition(payload.sampling, payload.preprocessing, dataset.snapshot if dataset else None)
+    item = CalibrationSetVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, sampling=payload.sampling, preprocessing=payload.preprocessing, validation=validation, status=payload.status, content_hash=_version_hash(value))
     session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.post("/api/v1/projects/{project_id}/calibration-sets/{calibration_id}/validate")
+def validate_calibration_set(project_id: str, calibration_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    item = session.get(CalibrationSetVersion, calibration_id)
+    if not item or item.project_id != project_id:
+        raise HTTPException(404, "Calibration set not found")
+    dataset = _version_dataset(session, project_id, item.dataset_id)
+    item.validation = validate_calibration_definition(item.sampling, item.preprocessing, dataset.snapshot if dataset else None)
+    if item.validation["status"] == "passed" and item.status == "draft":
+        item.status = "validated"
+    session.commit(); session.refresh(item)
+    return as_dict(item)
 
 
 def _project_entity(session: Session, entity, identifier: str | None, project_id: str, label: str):
