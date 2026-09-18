@@ -316,3 +316,22 @@ class ReleaseEvidence(Base, Timestamped):
     status: Mapped[str] = mapped_column(String(40), default="captured")
     content_hash: Mapped[str] = mapped_column(String(128))
     snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class AuditEvent(Base, Timestamped):
+    """Append-only local history for operator-visible lifecycle changes.
+
+    This deliberately stores generic entity references so new registry objects
+    can be audited without changing the schema. It is a local audit trail, not
+    an authentication or multi-user authorization system.
+    """
+    __tablename__ = "audit_events"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("AUDIT"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    entity_type: Mapped[str] = mapped_column(String(80), index=True)
+    entity_id: Mapped[str] = mapped_column(String(40), index=True)
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    actor: Mapped[str] = mapped_column(String(120), default="local-operator")
+    before_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    after_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)

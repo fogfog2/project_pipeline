@@ -22,7 +22,7 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
+from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
@@ -33,6 +33,7 @@ from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
 from .split_validation import validate_split_definition
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
+from .audit import record_audit
 
 
 @asynccontextmanager
@@ -185,7 +186,9 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
     if session.scalar(select(Project).where(Project.name == payload.name)):
         raise HTTPException(409, "A project with this name already exists")
     project = Project(**payload.model_dump())
-    session.add(project); session.commit(); session.refresh(project)
+    session.add(project); session.flush()
+    record_audit(session, project.id, "project", project.id, "created", after={"name": project.name, "task_kind": project.task_kind, "mode": project.mode})
+    session.commit(); session.refresh(project)
     return as_dict(project)
 
 
@@ -194,8 +197,11 @@ def update_project(project_id: str, payload: ProjectUpdate, session: Session = D
     project = require_project(session, project_id)
     if payload.name and payload.name != project.name and session.scalar(select(Project).where(Project.name == payload.name)):
         raise HTTPException(409, "A project with this name already exists")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    values = payload.model_dump(exclude_unset=True)
+    before = {key: getattr(project, key) for key in values}
+    for key, value in values.items():
         setattr(project, key, value)
+    record_audit(session, project_id, "project", project.id, "updated", before=before, after={key: getattr(project, key) for key in values})
     session.commit(); session.refresh(project)
     return as_dict(project)
 
@@ -203,7 +209,9 @@ def update_project(project_id: str, payload: ProjectUpdate, session: Session = D
 @app.post("/api/v1/projects/{project_id}/archive")
 def archive_project(project_id: str, session: Session = Depends(get_session)):
     project = require_project(session, project_id)
+    previous_status = project.status
     project.status = "archived" if project.status != "archived" else "active"
+    record_audit(session, project_id, "project", project.id, "archived" if project.status == "archived" else "restored", before={"status": previous_status}, after={"status": project.status})
     session.commit(); session.refresh(project)
     return as_dict(project)
 
@@ -263,6 +271,7 @@ def create_dataset(project_id: str, payload: DatasetCreate, session: Session = D
         register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{payload.name}/{payload.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=payload.annotation_path)
     if payload.manifest_path:
         register_artifact(session, project_id, kind="dataset-manifest", logical_name=f"{payload.name}/{payload.version}/manifest", owner_type="dataset", owner_id=dataset.id, source_path=payload.manifest_path)
+    record_audit(session, project_id, "dataset", dataset.id, "created", after={"name": dataset.name, "version": dataset.version, "status": dataset.status, "format": dataset.format})
     session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
@@ -276,6 +285,7 @@ def update_dataset(project_id: str, dataset_id: str, payload: DatasetUpdate, ses
     if dataset.status == "finalized":
         raise HTTPException(409, "Finalized DatasetVersion is immutable; create a new version")
     values = payload.model_dump(exclude_unset=True)
+    before = {key: getattr(dataset, key) for key in values}
     for key, value in values.items():
         setattr(dataset, key, value)
     if "annotation_path" in values or "manifest_path" in values:
@@ -286,6 +296,7 @@ def update_dataset(project_id: str, dataset_id: str, payload: DatasetUpdate, ses
             register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=dataset.annotation_path)
         if "manifest_path" in values and dataset.manifest_path:
             register_artifact(session, project_id, kind="dataset-manifest", logical_name=f"{dataset.name}/{dataset.version}/manifest", owner_type="dataset", owner_id=dataset.id, source_path=dataset.manifest_path)
+    record_audit(session, project_id, "dataset", dataset.id, "updated", before=before, after={key: getattr(dataset, key) for key in values})
     session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
@@ -296,7 +307,9 @@ def archive_dataset(project_id: str, dataset_id: str, session: Session = Depends
     dataset = session.get(DatasetVersion, dataset_id)
     if not dataset or dataset.project_id != project_id:
         raise HTTPException(404, "Dataset not found")
+    previous_status = dataset.status
     dataset.status = "draft" if dataset.status == "archived" else "archived"
+    record_audit(session, project_id, "dataset", dataset.id, "archived" if dataset.status == "archived" else "restored", before={"status": previous_status}, after={"status": dataset.status})
     session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
@@ -318,6 +331,7 @@ def finalize_dataset(project_id: str, dataset_id: str, session: Session = Depend
     dataset.snapshot = build_dataset_snapshot(task_kind=dataset.task_kind, format=dataset.format, manifest_path=dataset.manifest_path, annotation_path=dataset.annotation_path)
     dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints, "finalized_at": "local"}
     dataset.status = "finalized"
+    record_audit(session, project_id, "dataset", dataset.id, "finalized", before={"status": "draft"}, after={"status": dataset.status, "content_hash": dataset.content_hash})
     session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
@@ -385,7 +399,9 @@ def create_storage(project_id: str, payload: StorageMappingCreate, session: Sess
         raise HTTPException(409, "A storage mapping with this name already exists")
     validation = storage_status(payload.root_path)
     mapping = StorageMapping(project_id=project_id, **payload.model_dump(), status=validation["status"], last_validation=validation)
-    session.add(mapping); session.commit(); session.refresh(mapping)
+    session.add(mapping); session.flush()
+    record_audit(session, project_id, "storage", mapping.id, "created", after={"name": mapping.name, "status": mapping.status, "read_only": mapping.read_only, "root_path": mapping.root_path})
+    session.commit(); session.refresh(mapping)
     return as_dict(mapping)
 
 
@@ -396,12 +412,14 @@ def update_storage(project_id: str, storage_id: str, payload: StorageMappingUpda
     if not mapping or mapping.project_id != project_id:
         raise HTTPException(404, "Storage mapping not found")
     values = payload.model_dump(exclude_unset=True)
+    before = {key: getattr(mapping, key) for key in values}
     for key, value in values.items():
         setattr(mapping, key, value)
     if "root_path" in values:
         validation = storage_status(mapping.root_path)
         mapping.status = validation["status"]
         mapping.last_validation = validation
+    record_audit(session, project_id, "storage", mapping.id, "updated", before=before, after={key: getattr(mapping, key) for key in values})
     session.commit(); session.refresh(mapping)
     return as_dict(mapping)
 
@@ -425,12 +443,14 @@ def archive_storage(project_id: str, storage_id: str, session: Session = Depends
     mapping = session.get(StorageMapping, storage_id)
     if not mapping or mapping.project_id != project_id:
         raise HTTPException(404, "Storage mapping not found")
+    previous_status = mapping.status
     if mapping.status == "archived":
         validation = storage_status(mapping.root_path)
         mapping.status = validation["status"]
         mapping.last_validation = validation
     else:
         mapping.status = "archived"
+    record_audit(session, project_id, "storage", mapping.id, "archived" if mapping.status == "archived" else "restored", before={"status": previous_status}, after={"status": mapping.status, "root_path": mapping.root_path})
     session.commit(); session.refresh(mapping)
     return as_dict(mapping)
 
@@ -778,6 +798,7 @@ def create_model(project_id: str, payload: ModelCreate, session: Session = Depen
         register_artifact(session, project_id, kind="model", logical_name=f"{values['name']}/{values['version']}/artifact", owner_type="model", owner_id=model.id, source_path=values["artifact_path"], sha256=values.get("artifact_sha256"))
     if values.get("config_path"):
         register_artifact(session, project_id, kind="config", logical_name=f"{values['name']}/{values['version']}/config", owner_type="model", owner_id=model.id, source_path=values["config_path"], sha256=values.get("config_sha256"))
+    record_audit(session, project_id, "model", model.id, "created", after={"name": model.name, "version": model.version, "family": model.family, "alias": model.alias, "format": model.format, "precision": model.precision})
     session.commit(); session.refresh(model)
     return as_dict(model)
 
@@ -789,6 +810,7 @@ def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: 
     if not model or model.project_id != project_id:
         raise HTTPException(404, "Model not found")
     values = payload.model_dump(exclude_unset=True)
+    before = {key: getattr(model, key) for key in values if key != "alias_reason"}
     alias_reason = values.pop("alias_reason", "")
     previous_alias = model.alias
     for key, value in values.items():
@@ -803,6 +825,7 @@ def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: 
         model.config_sha256 = file_sha256(model.config_path) if model.config_path and Path(model.config_path).is_file() else None
         if model.config_path:
             register_artifact(session, project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", owner_type="model", owner_id=model.id, source_path=model.config_path, sha256=model.config_sha256)
+    record_audit(session, project_id, "model", model.id, "updated", before=before, after={key: getattr(model, key) for key in values if key != "alias_reason"}, details={"alias_reason": alias_reason} if alias_reason else {})
     session.commit(); session.refresh(model)
     return as_dict(model)
 
@@ -815,7 +838,9 @@ def archive_model(project_id: str, model_id: str, session: Session = Depends(get
         raise HTTPException(404, "Model not found")
     if model.alias == "production":
         raise HTTPException(409, "Production model must be unaliased before archiving")
+    previous_status = model.status
     model.status = "experimental" if model.status == "archived" else "archived"
+    record_audit(session, project_id, "model", model.id, "archived" if model.status == "archived" else "restored", before={"status": previous_status}, after={"status": model.status})
     session.commit(); session.refresh(model)
     return as_dict(model)
 
@@ -898,7 +923,9 @@ def create_run(project_id: str, payload: RunCreate, response: Response, session:
             raise HTTPException(409, "An external run with this ID exists but its content differs")
         values["import_hash"] = import_hash
     run = Run(project_id=project_id, **values)
-    session.add(run); session.commit(); session.refresh(run)
+    session.add(run); session.flush()
+    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "external_run_id": run.external_run_id, "dataset_id": run.dataset_id, "model_id": run.model_id})
+    session.commit(); session.refresh(run)
     return as_dict(run)
 
 
@@ -933,7 +960,9 @@ def import_result(project_id: str, payload: ResultImportCreate, session: Session
         external_run_id=manifest["external_run_id"], import_hash=fingerprint,
         config={**manifest.get("config", {}), **({"target_profile_id": target_profile_id} if target_profile_id else {})}, metrics=manifest.get("metrics", {}), details=details, environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
     )
-    session.add(run); session.commit(); session.refresh(run)
+    session.add(run); session.flush()
+    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
+    session.commit(); session.refresh(run)
     return {"status": "created", "run": as_dict(run)}
 
 
@@ -982,6 +1011,7 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
     )
     details["prediction_artifact_id"] = prediction_artifact.id
     run.details = details
+    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
     session.commit(); session.refresh(run)
     return {"run": as_dict(run), "result": {"metric_scope": metric_scope, **details}}
 
@@ -1014,7 +1044,9 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
         metrics={key: result[key] for key in metric_keys}, details=result, environment={"source": "external-classification-records"},
         notes="Per-class and confusion matrix output is returned by this import response.",
     )
-    session.add(run); session.commit(); session.refresh(run)
+    session.add(run); session.flush()
+    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
+    session.commit(); session.refresh(run)
     return {"run": as_dict(run), "result": result}
 
 
@@ -1092,6 +1124,7 @@ def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, ses
     prediction_artifact = register_artifact(session, project_id, kind="onnx-records", logical_name=f"{model.name}/{model.version}/{dataset.name}/{dataset.version}/onnx-records", owner_type="run", owner_id=run.id, source_path=payload.records_path, notes="ONNX batch input records")
     session.flush()
     run.details = {**details, "records_artifact_id": prediction_artifact.id}
+    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
     session.commit(); session.refresh(run)
     return {"run": as_dict(run), "result": {"metric_scope": result.get("metric_scope", "classification"), **details}}
 
@@ -1258,6 +1291,7 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
     for evidence in captured_evidence:
         evidence.release_id = release.id
         session.add(evidence)
+    record_audit(session, project_id, "release", release.id, "created", after={"name": release.name, "model_id": release.model_id, "decision": release.decision}, details={"evidence_count": len(captured_evidence), "required_evidence_missing": missing_evidence})
     session.commit(); session.refresh(release)
     response = as_dict(release)
     response["evidence"] = [as_dict(item) for item in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.release_id == release.id)).all()]
@@ -1271,6 +1305,15 @@ def list_release_evidence(project_id: str, release_id: str, session: Session = D
     if not release or release.project_id != project_id:
         raise HTTPException(404, "Release not found")
     return [as_dict(item) for item in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id, ReleaseEvidence.release_id == release_id).order_by(ReleaseEvidence.created_at)).all()]
+
+
+@app.get("/api/v1/projects/{project_id}/audit-events")
+def list_audit_events(project_id: str, limit: int = 200, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    bounded_limit = max(1, min(limit, 1000))
+    return [as_dict(item) for item in session.scalars(
+        select(AuditEvent).where(AuditEvent.project_id == project_id).order_by(AuditEvent.created_at.desc()).limit(bounded_limit)
+    ).all()]
 
 
 @app.get("/api/v1/projects/{project_id}/export")

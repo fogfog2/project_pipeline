@@ -17,6 +17,7 @@ type QuantizationRun = { id: string; name: string; source_model_id: string; outp
 type BoardBenchmark = { id: string; name: string; model_id: string; target_profile_id: string; evaluation_run_id?: string; status: string; metrics: Record<string, number> };
 type Artifact = { id: string; kind: string; logical_name: string; owner_type?: string; owner_id?: string; sha256?: string; size_bytes: number; status: string };
 type AliasHistory = { id: string; model_id: string; previous_alias?: string; new_alias?: string; reason: string; created_at?: string };
+type AuditEvent = { id: string; entity_type: string; entity_id: string; action: string; actor: string; before_json: Record<string, unknown>; after_json: Record<string, unknown>; details: Record<string, unknown>; created_at?: string };
 type Overview = { counts: Record<string, number>; lineage_completeness: number; baseline?: Model; candidate?: Model; recent_runs: Run[]; next_actions: string[] };
 
 const isStatic = import.meta.env.VITE_STATIC_MODE === "true";
@@ -37,6 +38,7 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
       const releaseId = path.split("/").at(-2);
       return (snapshot.release_evidence || []).filter((item: ReleaseEvidence) => item.release_id === releaseId) as T;
     }
+    if (path.endsWith("/audit-events")) return (snapshot.audit_events || []) as T;
     if (path.endsWith("/datasets")) return (snapshot.datasets || []) as T;
     if (path.endsWith("/jobs")) return (snapshot.jobs || []) as T;
     if (path.endsWith("/targets")) return (snapshot.targets || []) as T;
@@ -75,15 +77,16 @@ function App() {
   const [quantizationRuns, setQuantizationRuns] = useState<QuantizationRun[]>([]);
   const [boardBenchmarks, setBoardBenchmarks] = useState<BoardBenchmark[]>([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [page, setPage] = useState("개요");
   const [message, setMessage] = useState("빈 프로젝트를 만들고 가이드에 따라 Storage, Dataset, Model, Evaluation을 연결하세요.");
 
   const selected = useMemo(() => projects.find((project) => project.id === projectId), [projects, projectId]);
   const loadProject = async (id: string) => {
-    const [nextOverview, nextModels, nextRuns, nextDatasets, nextJobs, nextTargets, nextStorages, nextReleases, labelSchemas, splits, evaluationSets, calibrationSets, nextQuantizationRuns, nextBoardBenchmarks, nextArtifacts] = await Promise.all([
-      api<Overview>(`/projects/${id}/overview`), api<Model[]>(`/projects/${id}/models`), api<Run[]>(`/projects/${id}/runs`), api<Dataset[]>(`/projects/${id}/datasets`), api<Job[]>(`/projects/${id}/jobs`), api<Target[]>(`/projects/${id}/targets`), api<StorageMapping[]>(`/projects/${id}/storages`), api<Release[]>(`/projects/${id}/releases`), api<VersionRecord[]>(`/projects/${id}/label-schemas`), api<VersionRecord[]>(`/projects/${id}/splits`), api<VersionRecord[]>(`/projects/${id}/evaluation-sets`), api<VersionRecord[]>(`/projects/${id}/calibration-sets`), api<QuantizationRun[]>(`/projects/${id}/quantization-runs`), api<BoardBenchmark[]>(`/projects/${id}/board-benchmarks`), api<Artifact[]>(`/projects/${id}/artifacts`)
+    const [nextOverview, nextModels, nextRuns, nextDatasets, nextJobs, nextTargets, nextStorages, nextReleases, labelSchemas, splits, evaluationSets, calibrationSets, nextQuantizationRuns, nextBoardBenchmarks, nextArtifacts, nextAuditEvents] = await Promise.all([
+      api<Overview>(`/projects/${id}/overview`), api<Model[]>(`/projects/${id}/models`), api<Run[]>(`/projects/${id}/runs`), api<Dataset[]>(`/projects/${id}/datasets`), api<Job[]>(`/projects/${id}/jobs`), api<Target[]>(`/projects/${id}/targets`), api<StorageMapping[]>(`/projects/${id}/storages`), api<Release[]>(`/projects/${id}/releases`), api<VersionRecord[]>(`/projects/${id}/label-schemas`), api<VersionRecord[]>(`/projects/${id}/splits`), api<VersionRecord[]>(`/projects/${id}/evaluation-sets`), api<VersionRecord[]>(`/projects/${id}/calibration-sets`), api<QuantizationRun[]>(`/projects/${id}/quantization-runs`), api<BoardBenchmark[]>(`/projects/${id}/board-benchmarks`), api<Artifact[]>(`/projects/${id}/artifacts`), api<AuditEvent[]>(`/projects/${id}/audit-events`)
     ]);
-    setProjectId(id); setOverview(nextOverview); setModels(nextModels); setRuns(nextRuns); setDatasets(nextDatasets); setJobs(nextJobs); setTargets(nextTargets); setStorages(nextStorages); setReleases(nextReleases); setVersions([...labelSchemas.map((item) => ({ ...item, kind: "label" })), ...splits.map((item) => ({ ...item, kind: "split" })), ...evaluationSets.map((item) => ({ ...item, kind: "evaluation" })), ...calibrationSets.map((item) => ({ ...item, kind: "calibration" }))]); setQuantizationRuns(nextQuantizationRuns); setBoardBenchmarks(nextBoardBenchmarks); setArtifacts(nextArtifacts);
+    setProjectId(id); setOverview(nextOverview); setModels(nextModels); setRuns(nextRuns); setDatasets(nextDatasets); setJobs(nextJobs); setTargets(nextTargets); setStorages(nextStorages); setReleases(nextReleases); setVersions([...labelSchemas.map((item) => ({ ...item, kind: "label" })), ...splits.map((item) => ({ ...item, kind: "split" })), ...evaluationSets.map((item) => ({ ...item, kind: "evaluation" })), ...calibrationSets.map((item) => ({ ...item, kind: "calibration" }))]); setQuantizationRuns(nextQuantizationRuns); setBoardBenchmarks(nextBoardBenchmarks); setArtifacts(nextArtifacts); setAuditEvents(nextAuditEvents);
   };
   const loadProjects = async () => {
     const value = await api<Project[]>("/projects");
@@ -152,7 +155,7 @@ function App() {
     } catch (error) { setMessage(`Dataset 확정 오류: ${String(error)}`); }
   };
 
-  const nav = ["개요", "데이터", "실험", "모델", "평가·비교", "실행·보드", "Release·리포트", "연결·설정", "가이드"];
+  const nav = ["개요", "데이터", "실험", "모델", "평가·비교", "실행·보드", "Release·리포트", "연결·설정", "감사 로그", "가이드"];
   return <div className="shell">
     <aside><div className="brand">VISION<br/><b>LIFECYCLE</b></div><button className="demo" disabled={isStatic} onClick={() => void createRecipeProject()}>실습 프로젝트 시작</button>
       <nav>{nav.map((item) => <button className={page === item ? "active" : ""} onClick={() => setPage(item)} key={item}>{item}</button>)}</nav>
@@ -171,11 +174,13 @@ function App() {
       {page === "실행·보드" && <><section><h2>실행·보드</h2><p>보드와 runtime은 버전이 있는 Target Profile로 기록합니다. 실제 benchmark manifest에는 해당 profile ID를 연결합니다.</p><TargetTable targets={targets}/>{!isStatic && <TargetConnect projectId={projectId} onSaved={() => void loadProject(projectId)} onError={setMessage}/>}</section><QuantizationConnect projectId={projectId} models={models} calibrationSets={versions.filter((item) => item.kind === "calibration")} onSaved={() => void loadProject(projectId)} onError={setMessage}/><BoardBenchmarkConnect projectId={projectId} models={models} targets={targets} runs={runs} onSaved={() => void loadProject(projectId)} onError={setMessage}/><section><h2>연결된 lineage 결과</h2><QuantizationTable runs={quantizationRuns}/><BoardBenchmarkTable benchmarks={boardBenchmarks}/></section><QuantizationComparison projectId={projectId} quantizationRuns={quantizationRuns} benchmarks={boardBenchmarks} runs={runs} onError={setMessage}/><section><h2>등록 작업</h2><p>등록 runner만 실행할 수 있습니다. 모의 board runner는 result contract 검증용입니다.</p><button disabled={isStatic} onClick={() => void runMockBoard()}>모의 보드 실행</button><JobTable jobs={jobs} onCancel={(id) => void cancelJob(id)} onRetry={(id) => void retryJob(id)}/></section></>}
       {page === "Release·리포트" && <><section><h2>Release·리포트</h2><p>Gate는 필수 지표가 없으면 INCOMPLETE로 처리합니다. JSON export API는 모델과 데이터의 절대 경로를 제거합니다.</p><ReleaseTable releases={releases}/><ReleaseConnect projectId={projectId} models={models} runs={runs} onSaved={() => void loadProject(projectId)} onError={setMessage}/><ReleaseEvidenceTable projectId={projectId} releases={releases} onError={setMessage}/><code>GET /api/v1/projects/{projectId}/export</code></section><LineageView projectId={projectId} onError={setMessage}/></>}
       {page === "연결·설정" && <><StorageConnect projectId={projectId} storages={storages} onSaved={() => void loadProject(projectId)} onError={setMessage}/><AgentPrompt projectId={projectId} onError={setMessage}/></>}
+      {page === "감사 로그" && <AuditLogTable events={auditEvents}/>}
       </>}</main></div>;
 }
 
 function ModelTable({ models, onArchive, onVerify }: { models: Model[]; onArchive?: (id: string) => void; onVerify?: (id: string) => void }) { return <div className="tablewrap"><table><thead><tr><th>Family</th><th>Version</th><th>Format</th><th>Precision</th><th>Alias</th><th>Status</th><th>Action</th></tr></thead><tbody>{models.map((model) => <tr key={model.id}><td><b>{model.family}</b></td><td>{model.version}</td><td>{model.format}</td><td>{model.precision}</td><td>{model.alias || "—"}</td><td><span className="pill">{model.status || (model.runnable ? "runnable" : "setup-required")}</span></td><td>{onVerify && <button className="table-action" onClick={() => onVerify(model.id)}>hash 검사</button>}{onArchive && <button className="table-action" onClick={() => onArchive(model.id)}>{model.status === "archived" ? "복원" : "보관"}</button>}</td></tr>)}</tbody></table></div>; }
 function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) { return <div className="tablewrap"><h3>Artifact provenance</h3><table><thead><tr><th>종류</th><th>이름</th><th>소유 entity</th><th>크기</th><th>SHA-256</th><th>상태</th></tr></thead><tbody>{artifacts.length ? artifacts.map((artifact) => <tr key={artifact.id}><td>{artifact.kind}</td><td>{artifact.logical_name}</td><td>{artifact.owner_type ? `${artifact.owner_type} · ${artifact.owner_id?.slice(0, 12)}` : "project"}</td><td>{artifact.size_bytes} B</td><td><code>{artifact.sha256?.slice(0, 18) || "unknown"}…</code></td><td><span className="pill">{artifact.status}</span></td></tr>) : <tr><td colSpan={6}>등록된 artifact가 없습니다.</td></tr>}</tbody></table></div>; }
+function AuditLogTable({ events }: { events: AuditEvent[] }) { return <section><span className="step-label">TRACEABILITY · AUDIT</span><h2>변경 이력</h2><p>프로젝트, Dataset, Storage, 모델, 외부 Run, Release의 생성·수정·보관 작업을 시간순으로 확인합니다. 이벤트는 삭제하지 않고 export에도 경로와 비밀값을 제거한 형태로 포함합니다.</p><div className="tablewrap"><table><thead><tr><th>시각</th><th>대상</th><th>작업</th><th>실행자</th><th>변경 내용</th></tr></thead><tbody>{events.length ? events.map((event) => <tr key={event.id}><td>{event.created_at ? new Date(event.created_at).toLocaleString() : "—"}</td><td>{event.entity_type} · <code>{event.entity_id.slice(0, 14)}</code></td><td><span className="pill">{event.action}</span></td><td>{event.actor}</td><td><details><summary>before / after</summary><pre className="inline-json">{JSON.stringify({ before: event.before_json, after: event.after_json, details: event.details }, null, 2)}</pre></details></td></tr>) : <tr><td colSpan={5}>아직 기록된 변경 이력이 없습니다.</td></tr>}</tbody></table></div></section>; }
 function AliasHistoryTable({ projectId, models, onSaved, onError }: { projectId: string; models: Model[]; onSaved: () => void; onError: (message: string) => void }) {
   const [modelId, setModelId] = useState("");
   const [alias, setAlias] = useState("");

@@ -351,6 +351,27 @@ def test_model_training_run_lineage_is_explicit():
         assert {edge["relation"] for edge in graph["edges"] if edge["target"] == model.json()["id"]} >= {"contains", "produced_by"}
 
 
+def test_audit_events_track_changes_and_export_redacts_paths():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project = client.post("/api/v1/projects", json={"name": "audit-project"}).json()
+        project_id = project["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={
+            "name": "images", "version": "v1", "manifest_path": "/private/images.json",
+        }).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={
+            "name": "candidate", "version": "v1", "family": "fixture", "source_dataset_id": dataset["id"],
+        }).json()
+        client.patch(f"/api/v1/projects/{project_id}/models/{model['id']}", json={"alias": "candidate", "alias_reason": "initial review"})
+        events = client.get(f"/api/v1/projects/{project_id}/audit-events").json()
+        assert events and events[0]["entity_type"] == "model"
+        assert {event["action"] for event in events} >= {"created", "updated"}
+        exported = client.get(f"/api/v1/projects/{project_id}/export").json()
+        audit = next(event for event in exported["audit_events"] if event["entity_id"] == dataset["id"])
+        assert "/private/images.json" not in str(audit)
+
+
 def test_split_validation_rejects_duplicate_items_and_group_leakage():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

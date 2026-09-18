@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, Project, QuantizationRun, Release, ReleaseEvidence, Run, SplitVersion, StorageMapping, TargetProfile
+from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, Project, QuantizationRun, Release, ReleaseEvidence, Run, SplitVersion, StorageMapping, TargetProfile
 from .dataset_snapshot import build_dataset_snapshot
 
 
@@ -255,10 +255,9 @@ def safe_export(session: Session, project_id: str) -> dict:
                 key: value for key, value in data["last_validation"].items()
                 if key in {"status", "readable", "writable", "reason"}
             }
-        if isinstance(data.get("details"), dict):
-            data["details"] = scrub(data["details"])
-        if isinstance(data.get("snapshot"), dict):
-            data["snapshot"] = scrub(data["snapshot"])
+        for nested_key in ("details", "snapshot", "before_json", "after_json"):
+            if isinstance(data.get(nested_key), (dict, list)):
+                data[nested_key] = scrub(data[nested_key])
         return data
 
     summary = overview(session, project_id)
@@ -288,6 +287,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "targets": [safe(x) for x in session.scalars(select(TargetProfile).where(TargetProfile.project_id == project_id)).all()],
         "releases": [safe(x) for x in session.scalars(select(Release).where(Release.project_id == project_id)).all()],
         "release_evidence": [safe(x) for x in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id)).all()],
+        "audit_events": [safe(x) for x in session.scalars(select(AuditEvent).where(AuditEvent.project_id == project_id).order_by(AuditEvent.created_at.desc())).all()],
         "redactions": ["storage_root", "root_path", "source_path", "managed_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"],
     }
 
