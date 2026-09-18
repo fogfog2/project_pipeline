@@ -5,6 +5,7 @@ import "./styles.css";
 type Project = { id: string; name: string; description: string; task_kind: string; mode?: string; recipe_id?: string; status?: string };
 type Model = { id: string; name: string; version: string; family: string; alias?: string; precision: string; format: string; runnable: boolean; status?: string };
 type Run = { id: string; kind: string; name: string; status: string; metrics: Record<string, number>; model_id?: string; dataset_id?: string; notes: string };
+type Release = { id: string; name: string; model_id: string; evaluation_run_id?: string; baseline_model_id?: string; decision: string; gate_result: Record<string, unknown>; notes: string };
 type Dataset = { id: string; name: string; version: string; format: string; status: string; sample_count: number; validation: Record<string, unknown> };
 type Job = { id: string; runner_id: string; status: string; log: string; result_json: Record<string, unknown> };
 type Target = { id: string; name: string; version: string; target_kind: string; runtime: string; hardware: Record<string, unknown>; notes: string };
@@ -21,6 +22,7 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
     if (path.endsWith("/overview")) return snapshot.overview as T;
     if (path.endsWith("/models")) return snapshot.models as T;
     if (path.endsWith("/runs")) return snapshot.runs as T;
+    if (path.endsWith("/releases")) return (snapshot.releases || []) as T;
     if (path.endsWith("/datasets")) return (snapshot.datasets || []) as T;
     if (path.endsWith("/jobs")) return (snapshot.jobs || []) as T;
     if (path.endsWith("/targets")) return (snapshot.targets || []) as T;
@@ -42,6 +44,7 @@ function App() {
   const [overview, setOverview] = useState<Overview>();
   const [models, setModels] = useState<Model[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [releases, setReleases] = useState<Release[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
@@ -51,10 +54,10 @@ function App() {
 
   const selected = useMemo(() => projects.find((project) => project.id === projectId), [projects, projectId]);
   const loadProject = async (id: string) => {
-    const [nextOverview, nextModels, nextRuns, nextDatasets, nextJobs, nextTargets, nextStorages] = await Promise.all([
-      api<Overview>(`/projects/${id}/overview`), api<Model[]>(`/projects/${id}/models`), api<Run[]>(`/projects/${id}/runs`), api<Dataset[]>(`/projects/${id}/datasets`), api<Job[]>(`/projects/${id}/jobs`), api<Target[]>(`/projects/${id}/targets`), api<StorageMapping[]>(`/projects/${id}/storages`)
+    const [nextOverview, nextModels, nextRuns, nextDatasets, nextJobs, nextTargets, nextStorages, nextReleases] = await Promise.all([
+      api<Overview>(`/projects/${id}/overview`), api<Model[]>(`/projects/${id}/models`), api<Run[]>(`/projects/${id}/runs`), api<Dataset[]>(`/projects/${id}/datasets`), api<Job[]>(`/projects/${id}/jobs`), api<Target[]>(`/projects/${id}/targets`), api<StorageMapping[]>(`/projects/${id}/storages`), api<Release[]>(`/projects/${id}/releases`)
     ]);
-    setProjectId(id); setOverview(nextOverview); setModels(nextModels); setRuns(nextRuns); setDatasets(nextDatasets); setJobs(nextJobs); setTargets(nextTargets); setStorages(nextStorages);
+    setProjectId(id); setOverview(nextOverview); setModels(nextModels); setRuns(nextRuns); setDatasets(nextDatasets); setJobs(nextJobs); setTargets(nextTargets); setStorages(nextStorages); setReleases(nextReleases);
   };
   const loadProjects = async () => {
     const value = await api<Project[]>("/projects");
@@ -124,7 +127,7 @@ function App() {
       {page === "데이터" && <><section><h2>Dataset Version</h2><p>먼저 서버/NAS 경로를 검사한 다음 검사 결과를 초안 DatasetVersion으로 저장합니다. 확정 버전은 수정하지 않고 새 버전을 만듭니다.</p><DatasetTable datasets={datasets} onArchive={(id) => void archive("datasets", id)} onFinalize={(id) => void finalizeDataset(id)}/><DatasetConnect projectId={projectId} onSaved={() => void loadProject(projectId)} onError={setMessage}/></section><PathInspector projectId={projectId} onError={setMessage}/></>}
       {page === "가이드" && <Guide />}
       {page === "실행·보드" && <><section><h2>실행·보드</h2><p>보드와 runtime은 버전이 있는 Target Profile로 기록합니다. 실제 benchmark manifest에는 해당 profile ID를 연결합니다.</p><TargetTable targets={targets}/>{!isStatic && <TargetConnect projectId={projectId} onSaved={() => void loadProject(projectId)} onError={setMessage}/>}</section><section><h2>등록 작업</h2><p>등록 runner만 실행할 수 있습니다. 모의 board runner는 result contract 검증용입니다.</p><button disabled={isStatic} onClick={() => void runMockBoard()}>모의 보드 실행</button><JobTable jobs={jobs}/></section></>}
-      {page === "Release·리포트" && <section><h2>Release·리포트</h2><p>Gate는 필수 지표가 없으면 INCOMPLETE로 처리합니다. JSON export API는 모델과 데이터의 절대 경로를 제거합니다.</p><code>GET /api/v1/projects/{projectId}/export</code></section>}
+      {page === "Release·리포트" && <><section><h2>Release·리포트</h2><p>Gate는 필수 지표가 없으면 INCOMPLETE로 처리합니다. JSON export API는 모델과 데이터의 절대 경로를 제거합니다.</p><ReleaseTable releases={releases}/><ReleaseConnect projectId={projectId} models={models} runs={runs} onSaved={() => void loadProject(projectId)} onError={setMessage}/><code>GET /api/v1/projects/{projectId}/export</code></section></>}
       {page === "연결·설정" && <><StorageConnect projectId={projectId} storages={storages} onSaved={() => void loadProject(projectId)} onError={setMessage}/><AgentPrompt projectId={projectId} onError={setMessage}/></>}
       </>}</main></div>;
 }
@@ -163,6 +166,12 @@ function EvaluationConnect({ projectId, models, datasets, onSaved, onError }: { 
   const [modelId, setModelId] = useState(""); const [datasetId, setDatasetId] = useState(""); const [predictionsPath, setPredictionsPath] = useState(""); const [protocol, setProtocol] = useState("onboarding_ap50");
   const save = async (event: FormEvent) => { event.preventDefault(); try { const result = await api<{ result: Record<string, unknown> }>(`/projects/${projectId}/evaluations/predictions`, { method: "POST", body: JSON.stringify({ model_id: modelId, dataset_id: datasetId, predictions_path: predictionsPath, protocol }) }); onSaved(); onError(`평가 완료: AP50 ${String(result.result.bbox_AP50 ?? "—")} · 원본 prediction을 동일 조건으로 다시 비교할 수 있습니다.`); } catch (error) { onError(`평가 실행 오류: ${String(error)}`); } };
   return <section><span className="step-label">STEP 5 · EVALUATION</span><h2>외부 prediction 평가</h2><p>학습 시스템이나 보드에서 만든 COCO prediction JSON을 등록합니다. 이 시스템은 학습을 실행하지 않으며, 선택한 DatasetVersion의 fingerprint와 평가 조건을 기록합니다.</p><form className="form two" onSubmit={(event) => void save(event)}><select required value={modelId} onChange={(event) => setModelId(event.target.value)}><option value="">평가 모델 선택</option>{models.filter((model) => model.status !== "archived").map((model) => <option value={model.id} key={model.id}>{model.family} · {model.version}</option>)}</select><select required value={datasetId} onChange={(event) => setDatasetId(event.target.value)}><option value="">평가 Dataset 선택</option>{datasets.filter((dataset) => dataset.status !== "archived").map((dataset) => <option value={dataset.id} key={dataset.id}>{dataset.name} · {dataset.version}</option>)}</select><select value={protocol} onChange={(event) => setProtocol(event.target.value)}><option value="onboarding_ap50">빠른 AP50</option><option value="coco_full">공식 COCO AP@[.50:.95]</option></select><input required value={predictionsPath} onChange={(event) => setPredictionsPath(event.target.value)} placeholder="서버 prediction JSON 경로"/><button disabled={isStatic} type="submit">평가 실행</button></form></section>;
+}
+function ReleaseTable({ releases }: { releases: Release[] }) { return <div className="tablewrap"><table><thead><tr><th>Release</th><th>Decision</th><th>Gate result</th><th>Notes</th></tr></thead><tbody>{releases.length ? releases.map((release) => <tr key={release.id}><td><b>{release.name}</b></td><td><span className="pill">{release.decision}</span></td><td>{String(release.gate_result?.reason || release.gate_result?.status || "—")}</td><td>{release.notes || "—"}</td></tr>) : <tr><td colSpan={4}>아직 Release 판정이 없습니다.</td></tr>}</tbody></table></div>; }
+function ReleaseConnect({ projectId, models, runs, onSaved, onError }: { projectId: string; models: Model[]; runs: Run[]; onSaved: () => void; onError: (message: string) => void }) {
+  const [name, setName] = useState("release-candidate"); const [modelId, setModelId] = useState(""); const [runId, setRunId] = useState(""); const [baselineId, setBaselineId] = useState(""); const [metric, setMetric] = useState("bbox_AP50"); const [minimum, setMinimum] = useState("0.5"); const [notes, setNotes] = useState("");
+  const save = async (event: FormEvent) => { event.preventDefault(); try { await api(`/projects/${projectId}/releases`, { method: "POST", body: JSON.stringify({ name, model_id: modelId, evaluation_run_id: runId || null, baseline_model_id: baselineId || null, gate_config: { minimum: { [metric]: Number(minimum) } }, notes }) }); onSaved(); onError("Release gate 판정을 저장했습니다. 필수 지표가 없으면 PASS가 아니라 INCOMPLETE로 남습니다."); } catch (error) { onError(`Release 판정 오류: ${String(error)}`); } };
+  return <div className="subform"><h3>Release gate 기록</h3><form className="form two" onSubmit={(event) => void save(event)}><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Release 이름"/><select required value={modelId} onChange={(event) => setModelId(event.target.value)}><option value="">후보 모델 선택</option>{models.filter((model) => model.status !== "archived").map((model) => <option value={model.id} key={model.id}>{model.family} · {model.version}</option>)}</select><select value={runId} onChange={(event) => setRunId(event.target.value)}><option value="">평가 run 선택(선택)</option>{runs.filter((run) => run.kind === "evaluation" && run.status === "completed").map((run) => <option value={run.id} key={run.id}>{run.name}</option>)}</select><select value={baselineId} onChange={(event) => setBaselineId(event.target.value)}><option value="">baseline 없음</option>{models.filter((model) => model.id !== modelId && model.status !== "archived").map((model) => <option value={model.id} key={model.id}>{model.family} · {model.version}</option>)}</select><input value={metric} onChange={(event) => setMetric(event.target.value)} placeholder="필수 metric, 예: bbox_AP50"/><input type="number" step="any" value={minimum} onChange={(event) => setMinimum(event.target.value)} placeholder="최소 threshold"/><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="결정 근거(선택)"/><button disabled={isStatic} type="submit">Gate 판정 저장</button></form></div>;
 }
 function StorageConnect({ projectId, storages, onSaved, onError }: { projectId: string; storages: StorageMapping[]; onSaved: () => void; onError: (message: string) => void }) {
   const [name, setName] = useState("dataset-root"); const [rootPath, setRootPath] = useState(""); const [notes, setNotes] = useState("");
