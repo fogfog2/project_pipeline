@@ -73,6 +73,9 @@ def test_restart_marks_active_jobs_interrupted():
         assert recover_interrupted() == 1
         current = next(item for item in client.get(f"/api/v1/projects/{project_id}/jobs").json() if item["id"] == job["id"])
         assert current["status"] == "interrupted"
+        retry = client.post(f"/api/v1/projects/{project_id}/jobs/{job['id']}/retry")
+        assert retry.status_code == 201
+        assert retry.json()["input_json"]["retry_of"] == job["id"]
 
 
 def test_result_import_is_idempotent_and_detects_conflict():

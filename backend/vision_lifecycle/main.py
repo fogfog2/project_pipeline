@@ -640,7 +640,7 @@ def create_job(project_id: str, payload: JobCreate, session: Session = Depends(g
         command = [profile.executable, *profile.default_args, *payload.args]
     else:
         command = ["builtin:mock-board"]
-    job = Job(project_id=project_id, runner_id=payload.runner_id, command=command, input_json=payload.input_json, status="queued")
+    job = Job(project_id=project_id, runner_id=payload.runner_id, command=command, input_json={**payload.input_json, "_runner_args": payload.args}, status="queued")
     session.add(job); session.commit(); session.refresh(job)
     launch(job, payload.args)
     return as_dict(job)
@@ -661,6 +661,22 @@ def cancel_job(project_id: str, job_id: str, session: Session = Depends(get_sess
     job.log = f"{job.log}Cancelled before process start.\n"
     session.commit(); session.refresh(job)
     return as_dict(job)
+
+
+@app.post("/api/v1/projects/{project_id}/jobs/{job_id}/retry", status_code=201)
+def retry_job(project_id: str, job_id: str, session: Session = Depends(get_session)):
+    original = session.get(Job, job_id)
+    if not original or original.project_id != project_id:
+        raise HTTPException(404, "Job not found")
+    if original.status not in {"failed", "timed_out", "cancelled", "interrupted"}:
+        raise HTTPException(409, f"Job cannot be retried from {original.status}")
+    args = original.input_json.get("_runner_args", []) if isinstance(original.input_json, dict) else []
+    retry_input = {key: value for key, value in (original.input_json or {}).items() if key != "_runner_args"}
+    retry_input["retry_of"] = original.id
+    new_job = Job(project_id=project_id, runner_id=original.runner_id, command=original.command, input_json={**retry_input, "_runner_args": args}, status="queued")
+    session.add(new_job); session.commit(); session.refresh(new_job)
+    launch(new_job, args)
+    return as_dict(new_job)
 
 
 @app.get("/api/v1/projects/{project_id}/releases")
