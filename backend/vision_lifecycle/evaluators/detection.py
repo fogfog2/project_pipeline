@@ -4,6 +4,7 @@ from collections import defaultdict
 from contextlib import redirect_stdout
 import io
 import json
+import math
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -41,6 +42,24 @@ def _average_precision(flags: list[tuple[float, int]], ground_truth_count: int) 
     return area
 
 
+def _prediction_error(item: object, image_ids: set[int], category_ids: set[int]) -> str | None:
+    if not isinstance(item, dict):
+        return "prediction must be an object"
+    if not isinstance(item.get("image_id"), int) or isinstance(item.get("image_id"), bool) or item.get("image_id") not in image_ids:
+        return "unknown or invalid image_id"
+    if not isinstance(item.get("category_id"), int) or isinstance(item.get("category_id"), bool) or item.get("category_id") not in category_ids:
+        return "unknown or invalid category_id"
+    bbox = item.get("bbox")
+    if not isinstance(bbox, list) or len(bbox) != 4 or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) for value in bbox):
+        return "bbox must contain four finite numbers"
+    if bbox[2] <= 0 or bbox[3] <= 0:
+        return "bbox width and height must be positive"
+    score = item.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(float(score)):
+        return "score must be a finite number"
+    return None
+
+
 def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou_threshold: float = 0.5) -> dict:
     """A small, dependency-free COCO-style AP@IoU evaluator for onboarding fixtures.
 
@@ -48,6 +67,7 @@ def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou
     """
     coco = load_coco(annotation_path)
     categories = {category["id"]: category["name"] for category in coco["categories"]}
+    image_ids = {image["id"] for image in coco.get("images", []) if isinstance(image.get("id"), int)}
     ground_truth: dict[int, dict[tuple[int, int], list[dict]]] = defaultdict(lambda: defaultdict(list))
     for annotation in coco["annotations"]:
         if annotation.get("iscrowd", 0):
@@ -55,9 +75,13 @@ def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou
         ground_truth[annotation["category_id"]][(annotation["image_id"], annotation["category_id"])].append(annotation)
     grouped_predictions: dict[int, list[dict]] = defaultdict(list)
     invalid_predictions = 0
-    for prediction in predictions:
-        if prediction.get("category_id") not in categories or not isinstance(prediction.get("bbox"), list) or len(prediction["bbox"]) != 4:
+    invalid_prediction_examples: list[dict] = []
+    for index, prediction in enumerate(predictions):
+        reason = _prediction_error(prediction, image_ids, set(categories))
+        if reason:
             invalid_predictions += 1
+            if len(invalid_prediction_examples) < 50:
+                invalid_prediction_examples.append({"index": index, "reason": reason})
             continue
         grouped_predictions[prediction["category_id"]].append(prediction)
     per_class: dict[str, dict] = {}
@@ -93,6 +117,7 @@ def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou
         "precision": round(total_tp / (total_tp + total_fp), 6) if total_tp + total_fp else 0.0,
         "recall": round(total_tp / total_gt, 6) if total_gt else 0.0,
         "invalid_predictions": invalid_predictions,
+        "invalid_prediction_examples": invalid_prediction_examples,
         "per_class": per_class,
     }
 
@@ -116,23 +141,22 @@ def evaluate_coco_full(annotation_path: str, predictions: list[dict]) -> dict:
     coco_gt = COCO(str(source))
     category_ids = {category["id"] for category in coco_gt.dataset.get("categories", [])}
     valid: list[dict] = []
+    image_ids = {image["id"] for image in coco_gt.dataset.get("images", []) if isinstance(image.get("id"), int)}
     invalid = 0
-    for item in predictions:
-        if (
-            item.get("category_id") not in category_ids
-            or not isinstance(item.get("image_id"), int)
-            or not isinstance(item.get("bbox"), list)
-            or len(item["bbox"]) != 4
-            or not isinstance(item.get("score"), (int, float))
-        ):
+    invalid_examples: list[dict] = []
+    for index, item in enumerate(predictions):
+        reason = _prediction_error(item, image_ids, category_ids)
+        if reason:
             invalid += 1
+            if len(invalid_examples) < 50:
+                invalid_examples.append({"index": index, "reason": reason})
             continue
         valid.append({key: item[key] for key in ("image_id", "category_id", "bbox", "score")})
     if not valid:
         return {
             "metric_scope": "official COCO bbox AP@[.50:.95] (no valid predictions)",
             "bbox_mAP": 0.0, "bbox_AP50": 0.0, "bbox_AP75": 0.0, "bbox_AR100": 0.0,
-            "invalid_predictions": invalid, "per_class": {},
+            "invalid_predictions": invalid, "invalid_prediction_examples": invalid_examples, "per_class": {},
         }
 
     def run(category_id: int | None = None) -> list[float]:
@@ -164,5 +188,5 @@ def evaluate_coco_full(annotation_path: str, predictions: list[dict]) -> dict:
         "metric_scope": "official COCO bbox AP@[.50:.95]",
         "bbox_mAP": round(stats[0], 6), "bbox_AP50": round(stats[1], 6),
         "bbox_AP75": round(stats[2], 6), "bbox_AR100": round(stats[8], 6),
-        "invalid_predictions": invalid, "per_class": per_class,
+        "invalid_predictions": invalid, "invalid_prediction_examples": invalid_examples, "per_class": per_class,
     }

@@ -30,3 +30,18 @@ def test_detection_evaluator_reads_fixture():
     )
     assert result["bbox_AP50"] == 1.0
     assert result["recall"] == 1.0
+
+
+def test_detection_evaluator_explains_invalid_predictions():
+    result = evaluate_coco_predictions(
+        "examples/mmdetection/annotations/coco8.json",
+        [
+            {"image_id": 1, "category_id": 1, "bbox": [0, 0, -1, 5], "score": 0.9},
+            {"image_id": 999, "category_id": 1, "bbox": [0, 0, 1, 1], "score": 0.9},
+            {"image_id": 1, "category_id": 1, "bbox": [0, 0, 1, 1], "score": float("nan")},
+        ],
+    )
+    assert result["invalid_predictions"] == 3
+    assert {item["reason"] for item in result["invalid_prediction_examples"]} == {
+        "bbox width and height must be positive", "unknown or invalid image_id", "score must be a finite number",
+    }
