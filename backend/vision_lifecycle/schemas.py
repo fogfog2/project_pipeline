@@ -171,6 +171,17 @@ class ModelCreate(BaseModel):
     metadata_json: dict[str, Any] = Field(default_factory=dict)
 
 
+class TrainingRunPayload(BaseModel):
+    """Typed provenance fields for an externally executed training run."""
+    framework: str | None = None
+    framework_version: str | None = None
+    commit: str | None = None
+    seed: int | None = None
+    split_id: str | None = None
+    label_schema_id: str | None = None
+    unknown_fields: list[str] = Field(default_factory=list)
+
+
 class RunCreate(BaseModel):
     kind: str
     name: str
@@ -183,6 +194,7 @@ class RunCreate(BaseModel):
     metrics: dict[str, float] = Field(default_factory=dict)
     details: dict[str, Any] = Field(default_factory=dict)
     environment: dict[str, Any] = Field(default_factory=dict)
+    training: TrainingRunPayload | None = None
     notes: str = ""
 
 

@@ -258,6 +258,36 @@ def test_classification_dataset_mapping_rejects_unknown_label():
         assert response.status_code == 422
 
 
+def test_training_run_typed_provenance_is_normalized_and_references_are_checked():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "typed-training"}).json()["id"]
+        other_project_id = client.post("/api/v1/projects", json={"name": "typed-training-other"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "images", "version": "v1"}).json()
+        labels = client.post(f"/api/v1/projects/{project_id}/label-schemas", json={"name": "labels", "version": "v1", "dataset_id": dataset["id"], "classes": [{"id": 1, "name": "person"}]}).json()
+        split = client.post(f"/api/v1/projects/{project_id}/splits", json={"name": "split", "version": "v1", "dataset_id": dataset["id"], "definition": {"splits": {"train": ["1"]}}}).json()
+        created = client.post(f"/api/v1/projects/{project_id}/runs", json={
+            "kind": "training", "name": "rtmdet train", "dataset_id": dataset["id"], "external_run_id": "TRAIN-1",
+            "training": {"framework": "MMDetection", "framework_version": "3.3.0", "commit": "abc123", "seed": 42, "split_id": split["id"], "label_schema_id": labels["id"]},
+            "config": {"optimizer": "AdamW"}, "metrics": {"loss": 0.12},
+        })
+        assert created.status_code == 201, created.text
+        assert created.json()["details"]["training"]["lineage_status"] == "complete"
+        assert created.json()["details"]["training"]["commit"] == "abc123"
+        cross_project_split = client.post(f"/api/v1/projects/{other_project_id}/splits", json={"name": "other", "version": "v1", "definition": {"splits": {"train": ["1"]}}}).json()
+        rejected = client.post(f"/api/v1/projects/{project_id}/runs", json={
+            "kind": "training", "name": "bad", "training": {"split_id": cross_project_split["id"]},
+        })
+        assert rejected.status_code == 422
+        other_dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "other-images", "version": "v1"}).json()
+        other_split = client.post(f"/api/v1/projects/{project_id}/splits", json={"name": "other-split", "version": "v1", "dataset_id": other_dataset["id"], "definition": {"splits": {"train": ["1"]}}}).json()
+        mismatched = client.post(f"/api/v1/projects/{project_id}/runs", json={
+            "kind": "training", "name": "mismatched", "dataset_id": dataset["id"], "training": {"split_id": other_split["id"]},
+        })
+        assert mismatched.status_code == 422
+
+
 def test_release_requires_compatible_baseline_for_regression_gate():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

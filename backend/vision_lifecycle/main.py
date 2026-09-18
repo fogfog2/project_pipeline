@@ -1099,7 +1099,24 @@ def create_run(project_id: str, payload: RunCreate, response: Response, session:
             raise HTTPException(422, f"{label} must belong to this project")
         if (payload.dataset_id and label == "Dataset" or payload.model_id and label == "Model" or payload.parent_run_id and label == "Parent run") and not entity:
             raise HTTPException(422, f"{label} not found")
-    values = payload.model_dump()
+    if payload.training and payload.kind != "training":
+        raise HTTPException(422, "Typed training provenance is only valid for a training Run")
+    training_details = None
+    if payload.training:
+        references = ((payload.training.split_id, SplitVersion, "Split"), (payload.training.label_schema_id, LabelSchemaVersion, "Label schema"))
+        for entity_id, entity_type, label in references:
+            if not entity_id:
+                continue
+            entity = session.get(entity_type, entity_id)
+            if not entity or entity.project_id != project_id:
+                raise HTTPException(422, f"{label} reference must belong to this project")
+            if payload.dataset_id and getattr(entity, "dataset_id", None) and entity.dataset_id != payload.dataset_id:
+                raise HTTPException(422, f"{label} reference must use the selected training DatasetVersion")
+        missing_fields = [field for field, value in (("dataset_id", payload.dataset_id), ("split_id", payload.training.split_id), ("label_schema_id", payload.training.label_schema_id)) if not value and field not in payload.training.unknown_fields]
+        training_details = {**payload.training.model_dump(exclude_none=True), "lineage_status": "complete" if not missing_fields else "partial", "missing_fields": missing_fields}
+    values = payload.model_dump(exclude={"training"})
+    if training_details:
+        values["details"] = {**values.get("details", {}), "training": training_details}
     if payload.external_run_id:
         existing = session.scalar(select(Run).where(Run.project_id == project_id, Run.external_run_id == payload.external_run_id))
         import_hash = _version_hash(values)
