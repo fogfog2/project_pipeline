@@ -28,6 +28,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 보드 raw output 파일을 summary metric과 분리한 artifact로 보존하고 hash를 재검증
 - 실험 화면에서 외부 training Run의 typed provenance(framework·commit·seed·split·label schema·unknown)와 dataset·config·metrics·environment·external ID를 등록하고 모델 연결에 재사용
 - 실험 화면에서 학습·양자화·보드 표준 result manifest를 직접 import하고 동일 external ID의 idempotency/충돌을 확인
+- result manifest에서 기존 QuantizationRun·CalibrationSet·BoardBenchmark ID를 명시해 외부 결과를 해당 lineage에 연결
 - 명시적 FP32·QuantSim·Target 평가 계약 검증과 Quantization Loss·Target Gap 비교 결과 저장
 - 보드 benchmark metric 유한값과 source/scope/batch/warmup/iterations/units 계약 검증(누락은 `incomplete`)
 - Dataset·Model·Run·Quantization·Board·Release를 연결하는 lineage API와 리포트 화면
@@ -130,6 +131,7 @@ visionops validate-coco /data/instances_val.json
 visionops create-project project.json
 visionops create-dataset PRJ-... dataset-version.json
 visionops create-model PRJ-... model-version.json
+visionops import-result PRJ-... result-manifest.json
 visionops register-artifact PRJ-... artifact.json
 visionops export PRJ-... --output pages/snapshot.json
 visionops backup --output backups/registry.sqlite

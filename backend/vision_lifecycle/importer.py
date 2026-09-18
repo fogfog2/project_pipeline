@@ -20,6 +20,7 @@ def validate_result_manifest(value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Result manifest kind must be training, export, quantization, evaluation, or board")
     if not isinstance(value.get("metrics", {}), dict) or not isinstance(value.get("config", {}), dict) or not isinstance(value.get("details", {}), dict):
         raise ValueError("Result manifest metrics, config, and details must be objects")
-    if "target_profile_id" in value and not isinstance(value["target_profile_id"], str):
-        raise ValueError("target_profile_id must be a target profile ID when provided")
+    for field in ("target_profile_id", "quantization_run_id", "calibration_set_id", "board_benchmark_id"):
+        if field in value and value[field] is not None and not isinstance(value[field], str):
+            raise ValueError(f"{field} must be an ID string when provided")
     return value

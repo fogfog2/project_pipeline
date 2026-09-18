@@ -1243,6 +1243,15 @@ def import_result(project_id: str, payload: ResultImportCreate, session: Session
     target_profile_id = manifest.get("target_profile_id")
     if target_profile_id and (not (target := session.get(TargetProfile, target_profile_id)) or target.project_id != project_id):
         raise HTTPException(422, "Result manifest target_profile_id does not belong to this project")
+    quantization_run_id = manifest.get("quantization_run_id")
+    if quantization_run_id and (not (quantization := session.get(QuantizationRun, quantization_run_id)) or quantization.project_id != project_id):
+        raise HTTPException(422, "Result manifest quantization_run_id does not belong to this project")
+    calibration_set_id = manifest.get("calibration_set_id")
+    if calibration_set_id and (not (calibration := session.get(CalibrationSetVersion, calibration_set_id)) or calibration.project_id != project_id):
+        raise HTTPException(422, "Result manifest calibration_set_id does not belong to this project")
+    board_benchmark_id = manifest.get("board_benchmark_id")
+    if board_benchmark_id and (not (benchmark := session.get(BoardBenchmark, board_benchmark_id)) or benchmark.project_id != project_id):
+        raise HTTPException(422, "Result manifest board_benchmark_id does not belong to this project")
     parent_run_id = manifest.get("parent_run_id")
     if parent_run_id and (not (parent := session.get(Run, parent_run_id)) or parent.project_id != project_id):
         raise HTTPException(422, "Result manifest parent_run_id does not belong to this project")
@@ -1257,7 +1266,7 @@ def import_result(project_id: str, payload: ResultImportCreate, session: Session
         project_id=project_id, kind=manifest["kind"], name=manifest["name"], status=manifest.get("status", "completed"),
         dataset_id=dataset_id, model_id=model_id, parent_run_id=parent_run_id,
         external_run_id=manifest["external_run_id"], import_hash=fingerprint,
-        config={**manifest.get("config", {}), **({"target_profile_id": target_profile_id} if target_profile_id else {})}, metrics=manifest.get("metrics", {}), details=details, environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
+        config={**manifest.get("config", {}), **({key: value for key, value in (("target_profile_id", target_profile_id), ("quantization_run_id", quantization_run_id), ("calibration_set_id", calibration_set_id), ("board_benchmark_id", board_benchmark_id)) if value})}, metrics=manifest.get("metrics", {}), details=details, environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
     )
     session.add(run); session.flush()
     record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})

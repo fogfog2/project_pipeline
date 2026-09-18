@@ -195,6 +195,10 @@ def lineage(session: Session, project_id: str) -> dict:
             edges.append({"source": run.model_id, "target": run.id, "relation": run.kind})
         if run.dataset_id:
             edges.append({"source": run.dataset_id, "target": run.id, "relation": "evaluated_on"})
+        for key, relation in (("quantization_run_id", "result_of"), ("calibration_set_id", "uses_calibration"), ("board_benchmark_id", "summarizes")):
+            reference_id = (run.config or {}).get(key)
+            if reference_id:
+                edges.append({"source": reference_id, "target": run.id, "relation": relation})
     for quant in quants:
         edges.append({"source": quant.source_model_id, "target": quant.id, "relation": "quantized"})
         if quant.output_model_id:

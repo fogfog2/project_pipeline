@@ -15,7 +15,8 @@ from .artifacts import register_artifact
 from .database import SessionLocal, engine, init_database
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot
-from .models import Artifact, DatasetVersion, ModelVersion, Project, StorageMapping
+from .importer import manifest_hash, validate_result_manifest
+from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DatasetVersion, ModelVersion, Project, QuantizationRun, Run, StorageMapping, TargetProfile
 from .runner import run_worker
 from .serializers import as_dict
 from .service import safe_export, seed_demo
@@ -86,6 +87,9 @@ def main() -> None:
     create_model = sub.add_parser("create-model", help="Register a ModelVersion from a JSON object")
     create_model.add_argument("project_id")
     create_model.add_argument("manifest")
+    import_result = sub.add_parser("import-result", help="Register an external result manifest")
+    import_result.add_argument("project_id")
+    import_result.add_argument("manifest", help="JSON result manifest")
     artifact = sub.add_parser("register-artifact", help="Register and hash a file provenance record")
     artifact.add_argument("project_id")
     artifact.add_argument("manifest", help="JSON object with kind, logical_name, and optional source_path")
@@ -200,6 +204,38 @@ def main() -> None:
             if payload.get("config_path"):
                 register_artifact(session, args.project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", owner_type="model", owner_id=model.id, source_path=payload["config_path"], sha256=payload["config_sha256"])
             session.commit(); session.refresh(model); _json(as_dict(model))
+        elif args.command == "import-result":
+            if not session.get(Project, args.project_id):
+                raise ValueError("Project not found")
+            manifest = validate_result_manifest(_read_json(args.manifest))
+            references = (
+                ("dataset_id", DatasetVersion), ("model_id", ModelVersion), ("target_profile_id", TargetProfile),
+                ("quantization_run_id", QuantizationRun), ("calibration_set_id", CalibrationSetVersion),
+                ("board_benchmark_id", BoardBenchmark), ("parent_run_id", Run),
+            )
+            for field, entity_type in references:
+                identifier = manifest.get(field)
+                if identifier:
+                    entity = session.get(entity_type, identifier)
+                    if not entity or entity.project_id != args.project_id:
+                        raise ValueError(f"{field} does not belong to this project")
+            fingerprint = manifest_hash(manifest)
+            existing = session.scalar(select(Run).where(Run.project_id == args.project_id, Run.external_run_id == manifest["external_run_id"]))
+            if existing:
+                if existing.import_hash == fingerprint:
+                    _json({"status": "existing", "run": as_dict(existing)}); return
+                raise ValueError("An external run with this ID exists but its manifest content differs")
+            config = {**manifest.get("config", {})}
+            for field in ("target_profile_id", "quantization_run_id", "calibration_set_id", "board_benchmark_id"):
+                if manifest.get(field):
+                    config[field] = manifest[field]
+            run = Run(
+                project_id=args.project_id, kind=manifest["kind"], name=manifest["name"], status=manifest.get("status", "completed"),
+                dataset_id=manifest.get("dataset_id"), model_id=manifest.get("model_id"), parent_run_id=manifest.get("parent_run_id"),
+                external_run_id=manifest["external_run_id"], import_hash=fingerprint, config=config,
+                metrics=manifest.get("metrics", {}), details=manifest.get("details", {}), environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
+            )
+            session.add(run); session.commit(); session.refresh(run); _json({"status": "created", "run": as_dict(run)})
         elif args.command == "register-artifact":
             if not session.get(Project, args.project_id):
                 raise ValueError("Project not found")

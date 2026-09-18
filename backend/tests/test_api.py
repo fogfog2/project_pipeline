@@ -214,6 +214,23 @@ def test_result_import_is_idempotent_and_detects_conflict():
         assert "measurement_path" not in exported_run["details"]
 
 
+def test_result_manifest_can_link_quantization_and_calibration_lineage():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "manifest-lineage"}).json()["id"]
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "fp32", "version": "v1", "family": "fixture"}).json()
+        calibration = client.post(f"/api/v1/projects/{project_id}/calibration-sets", json={"name": "cal", "version": "v1", "sampling": {"count": 1}, "preprocessing": {"color": "rgb"}}).json()
+        quantization = client.post(f"/api/v1/projects/{project_id}/quantization-runs", json={"name": "int8", "source_model_id": model["id"], "calibration_set_id": calibration["id"], "method": "ptq"}).json()
+        imported = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": {
+            "schema_version": "1.0", "external_run_id": "QUANT-1", "kind": "quantization", "name": "external int8",
+            "quantization_run_id": quantization["id"], "calibration_set_id": calibration["id"], "metrics": {"size_mb": 2.1},
+        }})
+        assert imported.status_code == 201, imported.text
+        assert imported.json()["run"]["config"]["quantization_run_id"] == quantization["id"]
+        assert imported.json()["run"]["config"]["calibration_set_id"] == calibration["id"]
+
+
 def test_training_run_registration_is_idempotent_and_detects_external_conflict():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
