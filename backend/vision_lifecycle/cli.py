@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -14,7 +15,7 @@ from .artifacts import register_artifact
 from .database import SessionLocal, engine, init_database
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot
-from .models import DatasetVersion, ModelVersion, Project
+from .models import Artifact, DatasetVersion, ModelVersion, Project, StorageMapping
 from .runner import run_worker
 from .serializers import as_dict
 from .service import safe_export, seed_demo
@@ -30,6 +31,38 @@ def _read_json(path: str) -> dict:
     if not isinstance(value, dict):
         raise ValueError("JSON input must be an object")
     return value
+
+
+def _backup_manifest(session) -> dict:
+    return {
+        "schema_version": "1.0",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "projects": [{"id": item.id, "name": item.name} for item in session.scalars(select(Project)).all()],
+        "storages": [{"id": item.id, "name": item.name, "status": item.status} for item in session.scalars(select(StorageMapping)).all()],
+        "artifacts": [{"id": item.id, "kind": item.kind, "sha256": item.sha256, "status": item.status} for item in session.scalars(select(Artifact)).all()],
+    }
+
+
+def _verify_backup_manifest(db_path: Path, manifest_path: Path) -> dict:
+    if not manifest_path.is_file():
+        return {"status": "unverified", "reason": "backup manifest not found"}
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    connection = sqlite3.connect(str(db_path))
+    try:
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            raise ValueError(f"Restored SQLite integrity check failed: {integrity}")
+        project_ids = {row[0] for row in connection.execute("SELECT id FROM projects")}
+        storage_ids = {row[0] for row in connection.execute("SELECT id FROM storage_mappings")}
+        artifact_rows = {row[0]: row[1] for row in connection.execute("SELECT id, sha256 FROM artifacts")}
+    finally:
+        connection.close()
+    expected_projects = {item["id"] for item in manifest.get("projects", [])}
+    expected_storages = {item["id"] for item in manifest.get("storages", [])}
+    expected_artifacts = {item["id"]: item.get("sha256") for item in manifest.get("artifacts", [])}
+    if project_ids != expected_projects or storage_ids != expected_storages or artifact_rows != expected_artifacts:
+        raise ValueError("Restored registry does not match the backup manifest IDs/hashes")
+    return {"status": "verified", "projects": len(project_ids), "storages": len(storage_ids), "artifacts": len(artifact_rows)}
 
 
 def main() -> None:
@@ -61,8 +94,10 @@ def main() -> None:
     worker.add_argument("--poll-seconds", type=float, default=1.0)
     backup = sub.add_parser("backup", help="Create a SQLite registry backup")
     backup.add_argument("--output", required=True, help="Destination SQLite file")
+    backup.add_argument("--manifest", help="Optional backup manifest JSON (defaults to <output>.manifest.json)")
     restore = sub.add_parser("restore", help="Restore the local registry from a SQLite backup")
     restore.add_argument("--input", required=True, help="Source SQLite backup file")
+    restore.add_argument("--manifest", help="Optional backup manifest JSON (defaults to <input>.manifest.json)")
     args = parser.parse_args()
 
     init_database()
@@ -80,7 +115,13 @@ def main() -> None:
             source.backup(destination)
         finally:
             destination.close(); source.close()
-        print(f"Wrote registry backup: {output}"); return
+        manifest_path = Path(args.manifest or f"{output}.manifest.json")
+        with SessionLocal() as session:
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(_backup_manifest(session), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"Wrote registry backup: {output}")
+        print(f"Wrote backup manifest: {manifest_path}")
+        return
     if args.command == "restore":
         source_path = Path(args.input)
         if not source_path.is_file():
@@ -92,7 +133,10 @@ def main() -> None:
         finally:
             destination.close(); source.close()
         init_database()
-        print(f"Restored registry backup: {source_path}"); return
+        manifest_path = Path(args.manifest or f"{source_path}.manifest.json")
+        verification = _verify_backup_manifest(db_path, manifest_path)
+        print(f"Restored registry backup: {source_path} ({verification['status']})")
+        return
     with SessionLocal() as session:
         if args.command == "init":
             print("Registry initialized at .vision-lifecycle/registry.db")

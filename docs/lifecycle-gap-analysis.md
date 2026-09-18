@@ -59,7 +59,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S20 | 후속 요구: RTMDet·YOLOX 실제 예제 | 부분 구현·실모델 미검증 | COCO annotation·수기 예측 fixture 및 다운로드 recipe 존재. 예제 이미지/실제 두 모델의 native→ONNX→평가 E2E 없음. MMDetection/MMDeploy 어댑터 존재와 실행 성공은 별개 |
 | S21 | 후속 요구: API/CLI/agent 동일 서비스 | 부분 구현 | CLI는 일부 등록·검사·export만 제공하고 ORM 직접 생성. API Pydantic/참조 검증과 불일치. skill은 안내문이며 formal adapter registry·JSON Schema·contract suite 미완성 |
 | S22 | 후속 요구: Pages 실제 결과 조회 | 부분 구현·정확성 보완 필요 | API/CLI export와 Pages workflow가 생성 시각·overview·artifact hash·평가 상세를 포함하고 경로/중첩 details의 path·command·secret 계열 키를 제거한다. workflow의 실제 선택 프로젝트 입력, 중첩 자유값 전체 allowlist, 정적 화면의 상세 리포트는 추가 필요 |
-| S23 | 후속 요구: 백업·복구·경로 이동 | 미구현 | Alembic 없음, create_all + 수동 ALTER만 존재. storage ID 매핑·artifact 백업·복원 검증 없음 |
+| S23 | 후속 요구: 백업·복구·경로 이동 | 부분 구현 | CLI backup/restore가 SQLite integrity와 프로젝트·Storage ID·artifact hash manifest를 함께 검증한다. Alembic 기반 migration과 외부 managed artifact 파일/Storage root 이동 검증은 남아 있다 |
 
 §1–3·15·17·19–21의 목표/아키텍처/수용 기준은 위 S01–S23의 통합 완료로 판단한다. §16의 추천 도구는 의무 설치 항목이 아니며 §18의 일정은 기존 예시로만 취급한다. §22 외부 참고 링크의 현재 제품 기능은 이번 코드 감사에서 재검증하지 않았다.
 
