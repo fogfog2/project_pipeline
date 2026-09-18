@@ -13,6 +13,13 @@ def test_detection_profile_requires_known_shape():
     assert profile.layout == "NCHW"
 
 
+def test_checked_in_onnx_fixtures_are_executable():
+    result = infer("examples/fixtures/classification_mean.onnx", "examples/fixtures/images/classification.png", {"task_kind": "classification", "input_name": "images", "input_size": [2, 2]})
+    assert result["top_indices"] == [2, 1, 0]
+    detection = infer("examples/fixtures/detection_constant.onnx", "examples/fixtures/images/detection.jpg", {"task_kind": "detection", "input_name": "images", "input_size": [2, 2], "outputs": {"boxes": "boxes", "scores": "scores", "labels": "labels"}})
+    assert detection["predictions"][0]["label"] == 0
+
+
 def test_classification_inference_profile(tmp_path: Path):
     onnx = pytest.importorskip("onnx")
     from PIL import Image
