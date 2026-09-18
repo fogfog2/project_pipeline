@@ -401,6 +401,30 @@ def test_storage_impact_includes_inventory_assets_and_jobs():
         assert {item["kind"] for item in impact.json()["dependencies"]} >= {"asset", "inventory-job"}
 
 
+def test_evaluation_set_is_persisted_and_must_match_dataset():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "evaluation-set-contract"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={
+            "name": "eval", "version": "v1", "format": "coco", "annotation_path": "examples/mmdetection/annotations/coco8.json",
+        }).json()
+        other_dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "other", "version": "v1"}).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "fixture", "task_kind": "detection", "source_dataset_id": dataset["id"]}).json()
+        evaluation_set = client.post(f"/api/v1/projects/{project_id}/evaluation-sets", json={
+            "name": "core", "version": "v1", "dataset_id": dataset["id"], "purpose": "core", "definition": {"items": [1, 2]},
+        }).json()
+        valid = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
+            "model_id": model["id"], "dataset_id": dataset["id"], "evaluation_set_id": evaluation_set["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",
+        })
+        assert valid.status_code == 201
+        assert valid.json()["run"]["config"]["evaluation_set_id"] == evaluation_set["id"]
+        invalid = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
+            "model_id": model["id"], "dataset_id": other_dataset["id"], "evaluation_set_id": evaluation_set["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",
+        })
+        assert invalid.status_code == 422
+
+
 def test_split_validation_rejects_duplicate_items_and_group_leakage():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

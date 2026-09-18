@@ -736,7 +736,7 @@ def compare_quantization_run(project_id: str, quantization_id: str, payload: Qua
             for key in ("dataset_id",):
                 if candidate.dataset_id != baseline.dataset_id:
                     reasons.append(f"{label} {key} does not match baseline")
-            for key in ("evaluator_version", "protocol", "scope"):
+            for key in ("evaluator_version", "protocol", "scope", "evaluation_set_id"):
                 if candidate.config.get(key) != baseline.config.get(key):
                     reasons.append(f"{label} {key} does not match baseline")
         models = [session.get(ModelVersion, identifier) for identifier in (baseline.model_id, quantsim.model_id, target_run.model_id)]
@@ -1021,6 +1021,9 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
     model = session.get(ModelVersion, payload.model_id)
     if not dataset or dataset.project_id != project_id or not model or model.project_id != project_id:
         raise HTTPException(422, "Model and dataset must belong to this project")
+    evaluation_set = _project_entity(session, EvaluationSetVersion, payload.evaluation_set_id, project_id, "Evaluation set")
+    if evaluation_set and evaluation_set.dataset_id and evaluation_set.dataset_id != dataset.id:
+        raise HTTPException(422, "Evaluation set must reference the selected DatasetVersion")
     if dataset.format != "coco" or not dataset.annotation_path:
         raise HTTPException(422, "Prediction evaluation currently requires a COCO dataset with annotation_path")
     if dataset.content_hash and dataset.content_hash.startswith("sha256:"):
@@ -1048,7 +1051,7 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
     run = Run(
         project_id=project_id, kind="evaluation", name=f"{model.family} prediction import", status="completed",
         dataset_id=dataset.id, model_id=model.id,
-        config={"evaluator_version": "coco-full-v1" if payload.protocol == "coco_full" and payload.evaluator_version == "lifecycle-ap50-v1" else payload.evaluator_version, "protocol": payload.protocol, "iou_threshold": payload.iou_threshold, "scope": metric_scope},
+        config={"evaluator_version": "coco-full-v1" if payload.protocol == "coco_full" and payload.evaluator_version == "lifecycle-ap50-v1" else payload.evaluator_version, "protocol": payload.protocol, "iou_threshold": payload.iou_threshold, "scope": metric_scope, **({"evaluation_set_id": evaluation_set.id} if evaluation_set else {})},
         metrics=metrics, details=details,
         environment={"source": "external-prediction-json"}, notes="Per-class output retained in evaluation import result.",
     )
@@ -1080,6 +1083,9 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
             unknown = sorted(supplied - known)
             if unknown:
                 raise HTTPException(422, f"Classification labels are not in the Dataset class mapping: {', '.join(unknown)}")
+    evaluation_set = _project_entity(session, EvaluationSetVersion, payload.evaluation_set_id, project_id, "Evaluation set")
+    if evaluation_set and evaluation_set.dataset_id and evaluation_set.dataset_id != payload.dataset_id:
+        raise HTTPException(422, "Evaluation set must reference the selected DatasetVersion")
     try:
         result = evaluate_classification(payload.records)
     except ValueError as error:
@@ -1088,7 +1094,7 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
     run = Run(
         project_id=project_id, kind="evaluation", name=f"{model.family} classification evaluation", status="completed",
         dataset_id=payload.dataset_id, model_id=model.id,
-        config={"evaluator_version": payload.evaluator_version, "task_kind": "classification"},
+        config={"evaluator_version": payload.evaluator_version, "task_kind": "classification", **({"evaluation_set_id": evaluation_set.id} if evaluation_set else {})},
         metrics={key: result[key] for key in metric_keys}, details=result, environment={"source": "external-classification-records"},
         notes="Per-class and confusion matrix output is returned by this import response.",
     )
@@ -1106,6 +1112,9 @@ def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, ses
     model = session.get(ModelVersion, payload.model_id)
     if not dataset or dataset.project_id != project_id or not model or model.project_id != project_id:
         raise HTTPException(422, "Model and dataset must belong to this project")
+    evaluation_set = _project_entity(session, EvaluationSetVersion, payload.evaluation_set_id, project_id, "Evaluation set")
+    if evaluation_set and evaluation_set.dataset_id and evaluation_set.dataset_id != dataset.id:
+        raise HTTPException(422, "Evaluation set must reference the selected DatasetVersion")
     if model.format != "onnx" or not model.artifact_path:
         raise HTTPException(422, "ONNX batch evaluation requires a registered ONNX model artifact")
     profile = model.metadata_json.get("onnx_profile")
@@ -1167,7 +1176,7 @@ def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, ses
             raise ValueError(f"ONNX batch evaluation does not support task_kind {model.task_kind}")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         raise HTTPException(422, str(error)) from error
-    run = Run(project_id=project_id, kind="evaluation", name=f"{model.family} ONNX batch evaluation", status="completed", dataset_id=dataset.id, model_id=model.id, config={"evaluator_version": payload.evaluator_version, "protocol": "onnx-batch", "task_kind": model.task_kind, "top_k": payload.top_k, "scope": result.get("metric_scope", "classification")}, metrics=metrics, details=details, environment={"provider": details.get("inference_provider", "unknown"), "runtime": "onnxruntime-cpu"}, notes="ONNX batch inference and evaluation from an explicit image record manifest.")
+    run = Run(project_id=project_id, kind="evaluation", name=f"{model.family} ONNX batch evaluation", status="completed", dataset_id=dataset.id, model_id=model.id, config={"evaluator_version": payload.evaluator_version, "protocol": "onnx-batch", "task_kind": model.task_kind, "top_k": payload.top_k, "scope": result.get("metric_scope", "classification"), **({"evaluation_set_id": evaluation_set.id} if evaluation_set else {})}, metrics=metrics, details=details, environment={"provider": details.get("inference_provider", "unknown"), "runtime": "onnxruntime-cpu"}, notes="ONNX batch inference and evaluation from an explicit image record manifest.")
     session.add(run); session.flush()
     prediction_artifact = register_artifact(session, project_id, kind="onnx-records", logical_name=f"{model.name}/{model.version}/{dataset.name}/{dataset.version}/onnx-records", owner_type="run", owner_id=run.id, source_path=payload.records_path, notes="ONNX batch input records")
     session.flush()
@@ -1301,11 +1310,7 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
             expected_mapping = model.metadata_json.get("class_mapping_version")
             baseline_mapping = baseline_model.metadata_json.get("class_mapping_version") if baseline_model else None
             for candidate in runs:
-                if candidate.config.get("evaluator_version") != evaluation.config.get("evaluator_version"):
-                    continue
-                if candidate.config.get("protocol") != evaluation.config.get("protocol"):
-                    continue
-                if candidate.config.get("scope") != evaluation.config.get("scope"):
+                if any(candidate.config.get(key) != evaluation.config.get(key) for key in ("evaluator_version", "protocol", "scope", "evaluation_set_id")):
                     continue
                 if expected_mapping and expected_mapping != baseline_mapping:
                     continue

@@ -14,6 +14,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - COCO annotation validation과 external prediction JSON의 onboarding AP50 또는 공식 COCO AP@[.50:.95] 평가
 - 분류 prediction record 기반 Top-1/Top-K·macro F1·confusion matrix 평가
 - 분류 평가의 class mapping·빈 label·중복 image·top-k 입력 검증
+- EvaluationSetVersion을 평가 Run에 연결하고 Dataset 불일치 평가를 차단
 - COCO·YOLO TXT·classification folder/CSV 경로 검사
 - 승인된 local runner profile과 모의 보드 runner의 작업 상태·로그 관리
 - 서비스 재시작 시 active job을 `interrupted`로 보존하고 자동 재실행하지 않는 복구 처리

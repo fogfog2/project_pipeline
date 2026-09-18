@@ -203,6 +203,7 @@ class RunnerProfileCreate(BaseModel):
 class PredictionEvaluationCreate(BaseModel):
     model_id: str
     dataset_id: str
+    evaluation_set_id: str | None = None
     predictions_path: str
     evaluator_version: str = "lifecycle-ap50-v1"
     protocol: str = "onboarding_ap50"
@@ -212,6 +213,7 @@ class PredictionEvaluationCreate(BaseModel):
 class OnnxBatchEvaluationCreate(BaseModel):
     model_id: str
     dataset_id: str
+    evaluation_set_id: str | None = None
     records_path: str
     evaluator_version: str = "onnx-batch-v1"
     top_k: int = Field(default=5, ge=1, le=20)
@@ -252,5 +254,6 @@ class ResultImportCreate(BaseModel):
 class ClassificationEvaluationCreate(BaseModel):
     model_id: str
     dataset_id: str | None = None
+    evaluation_set_id: str | None = None
     evaluator_version: str = "classification-v1"
     records: list[dict[str, Any]]
