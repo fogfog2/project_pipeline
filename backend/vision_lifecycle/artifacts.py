@@ -74,12 +74,22 @@ def verify_artifact(artifact: Artifact) -> dict[str, object]:
     """Refresh an artifact's accessibility, size, and content status."""
     path = Path(artifact.source_path).expanduser() if artifact.source_path else None
     if not path:
+        managed = Path(artifact.managed_path).expanduser() if artifact.managed_path else None
+        if managed and (managed.is_file() or managed.is_dir()):
+            artifact.status = "managed"
+            return {"id": artifact.id, "status": artifact.status, "managed_path": str(managed), "reason": "managed artifact copy is available"}
         artifact.status = "registered"
         return {"id": artifact.id, "status": artifact.status, "reason": "source path is not configured"}
     if path.is_dir():
+        if not path.exists() and artifact.managed_path and Path(artifact.managed_path).is_dir():
+            artifact.status = "managed"
+            return {"id": artifact.id, "status": artifact.status, "managed_path": artifact.managed_path, "reason": "source directory is unavailable; managed copy is available"}
         artifact.status = "directory"
         return {"id": artifact.id, "status": artifact.status, "reason": "directory references are not hashed"}
     if not path.is_file():
+        if artifact.managed_path and (Path(artifact.managed_path).is_file() or Path(artifact.managed_path).is_dir()):
+            artifact.status = "managed"
+            return {"id": artifact.id, "status": artifact.status, "managed_path": artifact.managed_path, "reason": "source file is unavailable; managed copy is available"}
         artifact.status = "unavailable"
         return {"id": artifact.id, "status": artifact.status, "reason": "source file is unavailable"}
     digest = file_sha256(path)

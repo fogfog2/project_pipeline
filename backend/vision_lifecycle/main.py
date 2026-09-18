@@ -829,7 +829,16 @@ def verify_model_artifacts(project_id: str, model_id: str, session: Session = De
     artifacts = session.scalars(select(Artifact).where(Artifact.project_id == project_id, Artifact.owner_type == "model", Artifact.owner_id == model.id, Artifact.status != "superseded")).all()
     results = [verify_artifact(artifact) for artifact in artifacts]
     session.commit()
-    return {"model_id": model.id, "ok": all(item["status"] in {"verified", "directory", "registered"} for item in results), "artifacts": results}
+    return {"model_id": model.id, "ok": all(item["status"] in {"verified", "directory", "managed", "registered"} for item in results), "artifacts": results}
+
+
+def _resolve_model_artifact(session: Session, model: ModelVersion, kind: str, configured_path: str | None) -> tuple[str | None, str]:
+    if configured_path and (Path(configured_path).is_file() or Path(configured_path).is_dir()):
+        return configured_path, "source"
+    artifact = session.scalar(select(Artifact).where(Artifact.project_id == model.project_id, Artifact.owner_type == "model", Artifact.owner_id == model.id, Artifact.kind == kind, Artifact.status != "superseded").order_by(Artifact.created_at.desc()))
+    if artifact and artifact.managed_path and (Path(artifact.managed_path).is_file() or Path(artifact.managed_path).is_dir()):
+        return artifact.managed_path, "managed"
+    return configured_path, "missing"
 
 
 @app.post("/api/v1/projects/{project_id}/inference-preview")
@@ -842,15 +851,23 @@ def inference_preview(project_id: str, payload: InferencePreviewRequest, session
         if expected_hash and path_value and Path(path_value).is_file() and file_sha256(path_value) != expected_hash:
             raise HTTPException(409, f"{label} changed after registration; verify or create a new ModelVersion")
     try:
-        if model.format == "onnx" and model.artifact_path:
+        artifact_path, artifact_source = _resolve_model_artifact(session, model, "model", model.artifact_path)
+        config_path, config_source = _resolve_model_artifact(session, model, "config", model.config_path)
+        if model.format == "onnx" and artifact_path:
             profile = model.metadata_json.get("onnx_profile")
             if not profile:
                 raise ValueError("Model metadata must include an explicit onnx_profile")
-            return infer_onnx(model.artifact_path, payload.image_path, profile)
-        if model.format == "mmdetection-pytorch" and model.artifact_path and model.config_path:
-            return infer_mmdetection(model.config_path, model.artifact_path, payload.image_path)
-        if model.format == "mmdeploy" and model.artifact_path:
-            return infer_mmdeploy(model.artifact_path, payload.image_path, model.metadata_json.get("mmdeploy_profile", {}))
+            result = infer_onnx(artifact_path, payload.image_path, profile)
+            result["artifact_source"] = artifact_source
+            return result
+        if model.format == "mmdetection-pytorch" and artifact_path and config_path:
+            result = infer_mmdetection(config_path, artifact_path, payload.image_path)
+            result["artifact_source"] = {"model": artifact_source, "config": config_source}
+            return result
+        if model.format == "mmdeploy" and artifact_path:
+            result = infer_mmdeploy(artifact_path, payload.image_path, model.metadata_json.get("mmdeploy_profile", {}))
+            result["artifact_source"] = artifact_source
+            return result
         raise ValueError("Inference preview requires an ONNX profile, a MMDetection config/checkpoint bundle, or an MMDeploy model directory")
     except (OSError, RuntimeError, ValueError) as error:
         raise HTTPException(422, str(error)) from error

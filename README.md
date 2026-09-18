@@ -36,6 +36,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 모델·Dataset·Run 소유 entity에 연결된 artifact hash와 lineage graph 노드
 - 등록된 파일/디렉터리를 `.vision-lifecycle/artifacts`에 관리 사본으로 보존하고 원본·관리 경로를 별도 기록(`VISION_LIFECYCLE_ARTIFACT_ROOT`로 위치 변경 가능)
 - 모델 화면의 checkpoint/config hash 재검증과 drift 시 inference preview 차단
+- 원본 model mount가 없어도 drift가 아닌 경우 관리 artifact 사본으로 inference preview를 재현하고 결과에 source/managed provenance를 표시
 - 모델·config 교체 시 과거 artifact를 `superseded`로 보존하고 현재 provenance와 구분
 - baseline/candidate alias 변경을 별도 이력으로 보존하고 변경 사유를 모델 화면에서 조회
 - 모델 등록 화면에서 ONNX/MMDeploy/MMDetection 형식·정밀도·profile을 선택하고 샘플 inference preview 실행
