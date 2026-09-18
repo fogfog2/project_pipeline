@@ -21,10 +21,10 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StorageMapping, TargetProfile
+from .models import BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
 from .fingerprints import dataset_fingerprint, file_sha256
@@ -81,6 +81,55 @@ def list_recipes():
         {"id": "mmdetection-onboarding", "name": "MMDetection RTMDet·YOLOX 실습", "task_kind": "detection", "steps": ["project", "data", "rtmdet", "evaluation", "yolox", "comparison"]},
         {"id": "classification-onboarding", "name": "분류 모델 실습", "task_kind": "classification", "steps": ["project", "data", "model", "evaluation", "comparison"]},
     ]
+
+
+_RECIPE_STEPS = {
+    "blank": ["project", "storage", "data", "contracts", "model", "evaluation", "comparison", "report"],
+    "mmdetection-onboarding": ["project", "storage", "data", "contracts", "rtmdet", "evaluation", "yolox", "comparison", "report"],
+    "classification-onboarding": ["project", "storage", "data", "contracts", "model", "evaluation", "comparison", "report"],
+}
+
+
+@app.get("/api/v1/projects/{project_id}/onboarding")
+def get_onboarding(project_id: str, session: Session = Depends(get_session)):
+    project = require_project(session, project_id)
+    onboarding = session.scalar(select(OnboardingSession).where(OnboardingSession.project_id == project_id))
+    if not onboarding:
+        return {"session": None, "steps": []}
+    steps = session.scalars(select(StepProgress).where(StepProgress.session_id == onboarding.id).order_by(StepProgress.created_at)).all()
+    return {"session": as_dict(onboarding), "steps": [as_dict(item) for item in steps]}
+
+
+@app.post("/api/v1/projects/{project_id}/onboarding", status_code=201)
+def create_onboarding(project_id: str, payload: OnboardingCreate, session: Session = Depends(get_session)):
+    project = require_project(session, project_id)
+    existing = session.scalar(select(OnboardingSession).where(OnboardingSession.project_id == project_id))
+    if existing:
+        return {"session": as_dict(existing), "steps": [as_dict(item) for item in session.scalars(select(StepProgress).where(StepProgress.session_id == existing.id).order_by(StepProgress.created_at)).all()]}
+    recipe_id = payload.recipe_id if payload.recipe_id in _RECIPE_STEPS else "blank"
+    onboarding = OnboardingSession(project_id=project.id, recipe_id=recipe_id, recipe_version=payload.recipe_version)
+    session.add(onboarding); session.flush()
+    steps = [StepProgress(session_id=onboarding.id, step_id=step) for step in _RECIPE_STEPS[recipe_id]]
+    session.add_all(steps); session.commit(); session.refresh(onboarding)
+    return {"session": as_dict(onboarding), "steps": [as_dict(item) for item in steps]}
+
+
+@app.patch("/api/v1/projects/{project_id}/onboarding/steps/{step_id}")
+def update_onboarding_step(project_id: str, step_id: str, payload: StepProgressUpdate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    onboarding = session.scalar(select(OnboardingSession).where(OnboardingSession.project_id == project_id))
+    if not onboarding:
+        raise HTTPException(404, "Onboarding session not found")
+    if payload.status not in {"not_started", "ready", "running", "blocked", "completed", "skipped", "needs_revalidation"}:
+        raise HTTPException(422, "Unsupported onboarding step status")
+    step = session.scalar(select(StepProgress).where(StepProgress.session_id == onboarding.id, StepProgress.step_id == step_id))
+    if not step:
+        raise HTTPException(404, "Onboarding step not found")
+    step.status = payload.status; step.evidence = payload.evidence
+    steps = session.scalars(select(StepProgress).where(StepProgress.session_id == onboarding.id)).all()
+    onboarding.status = "completed" if steps and all(item.status in {"completed", "skipped"} for item in steps) else "active"
+    session.commit(); session.refresh(step)
+    return as_dict(step)
 
 
 @app.get("/api/v1/environment")

@@ -108,6 +108,16 @@ class BoardBenchmarkCreate(BaseModel):
     notes: str = ""
 
 
+class OnboardingCreate(BaseModel):
+    recipe_id: str = "blank"
+    recipe_version: str = "v1"
+
+
+class StepProgressUpdate(BaseModel):
+    status: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
 class ModelUpdate(BaseModel):
     name: str | None = None
     alias: str | None = None

@@ -97,6 +97,20 @@ def test_external_worker_claims_one_queued_job():
     assert worker_once() is False
 
 
+def test_onboarding_session_persists_step_evidence():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "onboarding-project", "recipe_id": "mmdetection-onboarding"}).json()["id"]
+        created = client.post(f"/api/v1/projects/{project_id}/onboarding", json={"recipe_id": "mmdetection-onboarding"})
+        assert created.status_code == 201
+        assert len(created.json()["steps"]) == 9
+        updated = client.patch(f"/api/v1/projects/{project_id}/onboarding/steps/storage", json={"status": "completed", "evidence": {"storage_id": "STORE-1"}})
+        assert updated.status_code == 200
+        loaded = client.get(f"/api/v1/projects/{project_id}/onboarding").json()
+        assert next(step for step in loaded["steps"] if step["step_id"] == "storage")["status"] == "completed"
+
+
 def test_result_import_is_idempotent_and_detects_conflict():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

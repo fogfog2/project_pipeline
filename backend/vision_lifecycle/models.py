@@ -157,6 +157,24 @@ class BoardBenchmark(Base, Timestamped):
     notes: Mapped[str] = mapped_column(Text, default="")
 
 
+class OnboardingSession(Base, Timestamped):
+    __tablename__ = "onboarding_sessions"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("SESSION"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), unique=True, index=True)
+    recipe_id: Mapped[str] = mapped_column(String(120))
+    recipe_version: Mapped[str] = mapped_column(String(40), default="v1")
+    status: Mapped[str] = mapped_column(String(40), default="active")
+
+
+class StepProgress(Base, Timestamped):
+    __tablename__ = "step_progress"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("STEP"))
+    session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id"), index=True)
+    step_id: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(40), default="not_started")
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 class ModelVersion(Base, Timestamped):
     __tablename__ = "model_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("MODEL"))
