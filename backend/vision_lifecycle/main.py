@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal, init_database
-from .adapters.coco import validate_coco
+from .adapters.coco import load_coco, validate_coco
 from .adapters.inspect import inspect_path
 from .evaluators.detection import evaluate_coco_full, evaluate_coco_predictions
 from .evaluators.classification import evaluate_classification
@@ -203,6 +203,28 @@ def finalize_dataset(project_id: str, dataset_id: str, session: Session = Depend
     dataset.status = "finalized"
     session.commit(); session.refresh(dataset)
     return as_dict(dataset)
+
+
+@app.get("/api/v1/projects/{project_id}/datasets/{dataset_id}/preview")
+def preview_dataset(project_id: str, dataset_id: str, limit: int = 12, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    dataset = session.get(DatasetVersion, dataset_id)
+    if not dataset or dataset.project_id != project_id:
+        raise HTTPException(404, "Dataset not found")
+    if dataset.format != "coco" or not dataset.annotation_path:
+        raise HTTPException(422, "Preview currently requires a COCO annotation path")
+    if limit < 1 or limit > 100:
+        raise HTTPException(422, "limit must be between 1 and 100")
+    try:
+        source = load_coco(dataset.annotation_path)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(422, str(error)) from error
+    categories = {item["id"]: item.get("name", str(item["id"])) for item in source["categories"]}
+    by_image: dict[int, list[dict]] = {}
+    for annotation in source["annotations"]:
+        by_image.setdefault(annotation["image_id"], []).append({"id": annotation.get("id"), "category_id": annotation.get("category_id"), "category_name": categories.get(annotation.get("category_id"), "unknown"), "bbox": annotation.get("bbox"), "iscrowd": annotation.get("iscrowd", 0)})
+    images = [{"id": image.get("id"), "file_name": image.get("file_name"), "width": image.get("width"), "height": image.get("height"), "annotations": by_image.get(image.get("id"), [])} for image in source["images"][:limit]]
+    return {"dataset_id": dataset.id, "categories": categories, "images": images, "truncated": len(source["images"]) > limit}
 
 
 @app.post("/api/v1/projects/{project_id}/datasets/validate-coco")

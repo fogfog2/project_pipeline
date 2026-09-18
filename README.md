@@ -20,6 +20,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 데이터·모델·평가 결과의 명시적 lineage
 - 등록 가능한 checkpoint/config 파일의 SHA-256 provenance 기록
 - label schema, split, evaluation set, calibration set의 versioned contract와 content hash
+- COCO annotation image/category/bbox 샘플 preview
 - baseline/candidate의 호환성 검사와 metric delta 비교
 - FastAPI `/api/v1`와 `visionops` CLI
 - React/Vite 한국어 UI 골격
