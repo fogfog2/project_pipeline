@@ -10,6 +10,7 @@ from typing import Any
 
 from .database import SessionLocal
 from sqlalchemy import select, update
+from sqlalchemy.orm.exc import StaleDataError
 
 from .models import DataAsset, Job, RunnerProfile, StorageMapping
 from .storage import inventory as inventory_storage
@@ -47,7 +48,14 @@ def _append_log(job_id: str, message: str, *, status: str | None = None, result:
             job.status = status
         if result is not None:
             job.result_json = result
-        session.commit()
+        try:
+            session.commit()
+        except StaleDataError:
+            # A service restart or test/process-local database reset may make
+            # the object stale between the read and commit. Logs must never
+            # turn into an unhandled daemon-thread exception; the next append
+            # or status poll can recover the authoritative row if it exists.
+            session.rollback()
 
 
 def _run_mock_board(job_id: str) -> None:
