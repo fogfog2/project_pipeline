@@ -46,6 +46,18 @@ class DatasetUpdate(BaseModel):
     validation: dict[str, Any] | None = None
 
 
+class StorageMappingCreate(BaseModel):
+    name: str
+    root_path: str
+    read_only: bool = True
+    notes: str = ""
+
+
+class StorageBrowseRequest(BaseModel):
+    relative_path: str = ""
+    limit: int = Field(default=200, ge=1, le=500)
+
+
 class ModelUpdate(BaseModel):
     name: str | None = None
     alias: str | None = None

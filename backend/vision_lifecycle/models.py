@@ -49,6 +49,18 @@ class DatasetVersion(Base, Timestamped):
     validation: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class StorageMapping(Base, Timestamped):
+    __tablename__ = "storage_mappings"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("STORE"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    root_path: Mapped[str] = mapped_column(Text)
+    read_only: Mapped[bool] = mapped_column(default=True)
+    status: Mapped[str] = mapped_column(String(40), default="unavailable")
+    last_validation: Mapped[dict] = mapped_column(JSON, default=dict)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
 class ModelVersion(Base, Timestamped):
     __tablename__ = "model_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("MODEL"))

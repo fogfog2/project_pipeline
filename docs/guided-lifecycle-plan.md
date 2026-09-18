@@ -3,6 +3,8 @@
 상태: 설계안. 이 문서는 후속 구현의 통합 기준이며 현재 구현 완료를 의미하지 않는다.
 기존 요구사항은 `../On-device_Vision_AI_Lifecycle_Management_Plan.md`, 코드 감사 근거는 `lifecycle-gap-analysis.md`를 참고한다.
 
+구현 현황(2026-09-18): U0/U1과 U2의 시작점을 반영했다. 빈 프로젝트/선택형 실습, 초안 등록·보관, storage mapping의 읽기 전용 탐색·재검사, annotation/manifest fingerprint와 변경 감지까지는 동작한다. 이 문서의 나머지 DataAsset·split·preview·worker·recipe 상태 엔진은 아직 계획 항목이다.
+
 ## 1. 제품 목표와 변경 방향
 
 사용자는 빈 프로젝트를 만들고, 안내를 따라 자신이 가진 이미지·annotation·학습 결과·모델·config를 연결한다. 연결한 자료를 실제 검사·평가한 뒤 데이터나 모델, 설정을 변경해 결과를 비교하면서 시스템 사용법을 익힌다.

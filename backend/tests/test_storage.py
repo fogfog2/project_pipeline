@@ -1,0 +1,43 @@
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from vision_lifecycle.database import Base, engine
+from vision_lifecycle.main import app
+from vision_lifecycle.storage import browse, resolve_within, storage_status
+
+
+def test_storage_browse_stays_within_configured_root(tmp_path: Path):
+    root = tmp_path / "root"
+    (root / "nested").mkdir(parents=True)
+    (root / "nested" / "labels.json").write_text("{}", encoding="utf-8")
+    assert storage_status(str(root))["status"] == "available"
+    result = browse(str(root), "nested")
+    assert result["entries"][0]["relative_path"] == "nested/labels.json"
+    with pytest.raises(ValueError, match="escapes"):
+        resolve_within(str(root), "../outside")
+
+
+def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    annotation = tmp_path / "instances.json"
+    annotation.write_text(Path("examples/mmdetection/annotations/coco8.json").read_text(encoding="utf-8"), encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "hash-project"}).json()["id"]
+        mapping = client.post(f"/api/v1/projects/{project_id}/storages", json={"name": "workspace", "root_path": str(tmp_path)}).json()
+        assert client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/browse", json={}).status_code == 200
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "coco", "version": "v1", "annotation_path": str(annotation)}).json()
+        assert dataset["content_hash"].startswith("sha256:")
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "detector", "version": "v1", "family": "fixture", "source_dataset_id": dataset["id"]}).json()
+        annotation.write_text(annotation.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        response = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
+            "model_id": model["id"], "dataset_id": dataset["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",
+        })
+        assert response.status_code == 409
+        exported = client.get(f"/api/v1/projects/{project_id}/export")
+        assert exported.status_code == 200
+        # Path values and the absolute-path keys inside source fingerprints are
+        # intentionally absent from a Pages-safe snapshot.
+        assert str(tmp_path) not in exported.text

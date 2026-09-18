@@ -18,12 +18,14 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import DatasetVersion, Job, ModelVersion, Project, Release, Run, RunnerProfile, TargetProfile
+from .models import DatasetVersion, Job, ModelVersion, Project, Release, Run, RunnerProfile, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch
-from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, TargetProfileCreate
+from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageMappingCreate, TargetProfileCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, overview, safe_export, seed_demo
+from .fingerprints import dataset_fingerprint
+from .storage import browse as browse_storage, storage_status
 
 
 @asynccontextmanager
@@ -149,7 +151,9 @@ def create_dataset(project_id: str, payload: DatasetCreate, session: Session = D
     duplicate = session.scalar(select(DatasetVersion).where(DatasetVersion.project_id == project_id, DatasetVersion.name == payload.name, DatasetVersion.version == payload.version))
     if duplicate:
         raise HTTPException(409, "This DatasetVersion already exists in the project")
-    dataset = DatasetVersion(project_id=project_id, **payload.model_dump())
+    content_hash, fingerprints = dataset_fingerprint(payload.manifest_path, payload.annotation_path)
+    validation = {**payload.validation, "source_fingerprints": fingerprints} if fingerprints else payload.validation
+    dataset = DatasetVersion(project_id=project_id, **payload.model_dump(exclude={"validation"}), content_hash=content_hash, validation=validation)
     session.add(dataset); session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
@@ -179,6 +183,24 @@ def archive_dataset(project_id: str, dataset_id: str, session: Session = Depends
     return as_dict(dataset)
 
 
+@app.post("/api/v1/projects/{project_id}/datasets/{dataset_id}/finalize")
+def finalize_dataset(project_id: str, dataset_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    dataset = session.get(DatasetVersion, dataset_id)
+    if not dataset or dataset.project_id != project_id:
+        raise HTTPException(404, "Dataset not found")
+    if dataset.status == "archived":
+        raise HTTPException(409, "Restore the DatasetVersion before finalizing")
+    content_hash, fingerprints = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
+    if not content_hash:
+        raise HTTPException(422, "Finalize requires at least one accessible manifest or annotation file")
+    dataset.content_hash = content_hash
+    dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints, "finalized_at": "local"}
+    dataset.status = "finalized"
+    session.commit(); session.refresh(dataset)
+    return as_dict(dataset)
+
+
 @app.post("/api/v1/projects/{project_id}/datasets/validate-coco")
 def validate_dataset_coco(project_id: str, annotation_path: str, session: Session = Depends(get_session)):
     require_project(session, project_id)
@@ -193,6 +215,48 @@ def inspect_dataset_path(project_id: str, payload: PathInspectRequest, session: 
     require_project(session, project_id)
     try:
         return inspect_path(payload.path)
+    except (OSError, ValueError) as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@app.get("/api/v1/projects/{project_id}/storages")
+def list_storages(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(StorageMapping).where(StorageMapping.project_id == project_id).order_by(StorageMapping.name)).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/storages", status_code=201)
+def create_storage(project_id: str, payload: StorageMappingCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    if session.scalar(select(StorageMapping).where(StorageMapping.project_id == project_id, StorageMapping.name == payload.name)):
+        raise HTTPException(409, "A storage mapping with this name already exists")
+    validation = storage_status(payload.root_path)
+    mapping = StorageMapping(project_id=project_id, **payload.model_dump(), status=validation["status"], last_validation=validation)
+    session.add(mapping); session.commit(); session.refresh(mapping)
+    return as_dict(mapping)
+
+
+@app.post("/api/v1/projects/{project_id}/storages/{storage_id}/validate")
+def validate_storage(project_id: str, storage_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    mapping = session.get(StorageMapping, storage_id)
+    if not mapping or mapping.project_id != project_id:
+        raise HTTPException(404, "Storage mapping not found")
+    validation = storage_status(mapping.root_path)
+    mapping.status = validation["status"]
+    mapping.last_validation = validation
+    session.commit(); session.refresh(mapping)
+    return as_dict(mapping)
+
+
+@app.post("/api/v1/projects/{project_id}/storages/{storage_id}/browse")
+def browse_storage_mapping(project_id: str, storage_id: str, payload: StorageBrowseRequest, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    mapping = session.get(StorageMapping, storage_id)
+    if not mapping or mapping.project_id != project_id:
+        raise HTTPException(404, "Storage mapping not found")
+    try:
+        return browse_storage(mapping.root_path, payload.relative_path, payload.limit)
     except (OSError, ValueError) as error:
         raise HTTPException(422, str(error)) from error
 
@@ -330,6 +394,10 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
         raise HTTPException(422, "Model and dataset must belong to this project")
     if dataset.format != "coco" or not dataset.annotation_path:
         raise HTTPException(422, "Prediction evaluation currently requires a COCO dataset with annotation_path")
+    if dataset.content_hash and dataset.content_hash.startswith("sha256:"):
+        current_hash, _ = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
+        if current_hash != dataset.content_hash:
+            raise HTTPException(409, "Dataset source files changed since this version was registered; create a new DatasetVersion")
     try:
         import json
         from pathlib import Path

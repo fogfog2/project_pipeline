@@ -8,6 +8,7 @@ type Run = { id: string; kind: string; name: string; status: string; metrics: Re
 type Dataset = { id: string; name: string; version: string; format: string; status: string; sample_count: number; validation: Record<string, unknown> };
 type Job = { id: string; runner_id: string; status: string; log: string; result_json: Record<string, unknown> };
 type Target = { id: string; name: string; version: string; target_kind: string; runtime: string; hardware: Record<string, unknown>; notes: string };
+type StorageMapping = { id: string; name: string; root_path: string; read_only: boolean; status: string; last_validation: Record<string, unknown>; notes: string };
 type Overview = { counts: Record<string, number>; lineage_completeness: number; baseline?: Model; candidate?: Model; recent_runs: Run[]; next_actions: string[] };
 
 const isStatic = import.meta.env.VITE_STATIC_MODE === "true";
@@ -22,6 +23,7 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
     if (path.endsWith("/datasets")) return (snapshot.datasets || []) as T;
     if (path.endsWith("/jobs")) return (snapshot.jobs || []) as T;
     if (path.endsWith("/targets")) return (snapshot.targets || []) as T;
+    if (path.endsWith("/storages")) return (snapshot.storages || []) as T;
     throw new Error("정적 snapshot에 없는 API입니다.");
   }
   const response = await fetch(`/api/v1${path}`, { headers: { "Content-Type": "application/json" }, ...options });
@@ -42,15 +44,16 @@ function App() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
+  const [storages, setStorages] = useState<StorageMapping[]>([]);
   const [page, setPage] = useState("개요");
   const [message, setMessage] = useState("RTMDet · YOLOX 온보딩 예제를 시작하거나 기존 자료를 연결하세요.");
 
   const selected = useMemo(() => projects.find((project) => project.id === projectId), [projects, projectId]);
   const loadProject = async (id: string) => {
-    const [nextOverview, nextModels, nextRuns, nextDatasets, nextJobs, nextTargets] = await Promise.all([
-      api<Overview>(`/projects/${id}/overview`), api<Model[]>(`/projects/${id}/models`), api<Run[]>(`/projects/${id}/runs`), api<Dataset[]>(`/projects/${id}/datasets`), api<Job[]>(`/projects/${id}/jobs`), api<Target[]>(`/projects/${id}/targets`)
+    const [nextOverview, nextModels, nextRuns, nextDatasets, nextJobs, nextTargets, nextStorages] = await Promise.all([
+      api<Overview>(`/projects/${id}/overview`), api<Model[]>(`/projects/${id}/models`), api<Run[]>(`/projects/${id}/runs`), api<Dataset[]>(`/projects/${id}/datasets`), api<Job[]>(`/projects/${id}/jobs`), api<Target[]>(`/projects/${id}/targets`), api<StorageMapping[]>(`/projects/${id}/storages`)
     ]);
-    setProjectId(id); setOverview(nextOverview); setModels(nextModels); setRuns(nextRuns); setDatasets(nextDatasets); setJobs(nextJobs); setTargets(nextTargets);
+    setProjectId(id); setOverview(nextOverview); setModels(nextModels); setRuns(nextRuns); setDatasets(nextDatasets); setJobs(nextJobs); setTargets(nextTargets); setStorages(nextStorages);
   };
   const loadProjects = async () => {
     const value = await api<Project[]>("/projects");
@@ -113,7 +116,7 @@ function App() {
       {page === "가이드" && <Guide />}
       {page === "실행·보드" && <><section><h2>실행·보드</h2><p>보드와 runtime은 버전이 있는 Target Profile로 기록합니다. 실제 benchmark manifest에는 해당 profile ID를 연결합니다.</p><TargetTable targets={targets}/>{!isStatic && <TargetConnect projectId={projectId} onSaved={() => void loadProject(projectId)} onError={setMessage}/>}</section><section><h2>등록 작업</h2><p>등록 runner만 실행할 수 있습니다. 모의 board runner는 result contract 검증용입니다.</p><button disabled={isStatic} onClick={() => void runMockBoard()}>모의 보드 실행</button><JobTable jobs={jobs}/></section></>}
       {page === "Release·리포트" && <section><h2>Release·리포트</h2><p>Gate는 필수 지표가 없으면 INCOMPLETE로 처리합니다. JSON export API는 모델과 데이터의 절대 경로를 제거합니다.</p><code>GET /api/v1/projects/{projectId}/export</code></section>}
-      {page === "연결·설정" && <AgentPrompt projectId={projectId} onError={setMessage}/>} 
+      {page === "연결·설정" && <><StorageConnect projectId={projectId} storages={storages} onSaved={() => void loadProject(projectId)} onError={setMessage}/><AgentPrompt projectId={projectId} onError={setMessage}/></>}
       </>}</main></div>;
 }
 
@@ -135,7 +138,7 @@ function DatasetConnect({ projectId, onSaved, onError }: { projectId: string; on
 function PathInspector({ projectId, onError }: { projectId: string; onError: (message: string) => void }) {
   const [path, setPath] = useState(""); const [result, setResult] = useState<string>();
   const inspect = async (event: FormEvent) => { event.preventDefault(); try { const value = await api<{ detected_format: string; result: unknown }>(`/projects/${projectId}/inspect-path`, { method: "POST", body: JSON.stringify({ path }) }); setResult(JSON.stringify(value, null, 2)); } catch (error) { onError(`경로 검사 오류: ${String(error)}`); } };
-  return <section><h2>경로 검사</h2><p>서버가 접근할 수 있는 로컬/NAS 경로를 입력하세요. 저장 또는 외부 명령 실행은 하지 않습니다.</p><form className="form" onSubmit={(event) => void inspect(event)}><input required value={path} onChange={(event) => setPath(event.target.value)} placeholder="/data/project/annotations.json 또는 dataset directory"/><button type="submit">형식 검사</button></form>{result && <pre>{result}</pre>}</section>;
+  return <section><h2>경로 검사</h2><p>서버가 접근할 수 있는 로컬/NAS 경로를 검사합니다. 반복해서 사용할 위치는 먼저 연결·설정에서 Storage mapping으로 등록하세요. 이 검사는 저장·업로드·외부 명령을 실행하지 않습니다.</p><form className="form" onSubmit={(event) => void inspect(event)}><input required value={path} onChange={(event) => setPath(event.target.value)} placeholder="/data/project/annotations.json 또는 dataset directory"/><button type="submit">형식 검사</button></form>{result && <pre>{result}</pre>}</section>;
 }
 function ModelConnect({ projectId, datasets, onSaved, onError }: { projectId: string; datasets: Dataset[]; onSaved: () => void; onError: (message: string) => void }) {
   const [name, setName] = useState(""); const [version, setVersion] = useState("v1"); const [family, setFamily] = useState(""); const [config, setConfig] = useState(""); const [artifact, setArtifact] = useState(""); const [datasetId, setDatasetId] = useState("");
@@ -146,6 +149,15 @@ function TargetConnect({ projectId, onSaved, onError }: { projectId: string; onS
   const [name, setName] = useState(""); const [runtime, setRuntime] = useState("TensorRT"); const [version, setVersion] = useState("v1"); const [hardware, setHardware] = useState("");
   const save = async (event: FormEvent) => { event.preventDefault(); try { await api(`/projects/${projectId}/targets`, { method: "POST", body: JSON.stringify({ name, version, runtime, hardware: hardware ? { description: hardware } : {} }) }); setName(""); setHardware(""); onSaved(); } catch (error) { onError(`Target profile 등록 오류: ${String(error)}`); } };
   return <form className="form two" onSubmit={(event) => void save(event)}><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="예: Jetson Orin NX"/><input value={version} onChange={(event) => setVersion(event.target.value)} placeholder="Runtime / SDK version"/><input value={runtime} onChange={(event) => setRuntime(event.target.value)} placeholder="예: TensorRT"/><input value={hardware} onChange={(event) => setHardware(event.target.value)} placeholder="예: 15W, JetPack 6"/><button type="submit">Target profile 등록</button></form>;
+}
+function StorageConnect({ projectId, storages, onSaved, onError }: { projectId: string; storages: StorageMapping[]; onSaved: () => void; onError: (message: string) => void }) {
+  const [name, setName] = useState("dataset-root"); const [rootPath, setRootPath] = useState(""); const [notes, setNotes] = useState("");
+  const [browser, setBrowser] = useState<{ storageId: string; relativePath: string; entries: Array<{ name: string; relative_path: string; kind: string; size?: number }> }>();
+  const save = async (event: FormEvent) => { event.preventDefault(); try { await api(`/projects/${projectId}/storages`, { method: "POST", body: JSON.stringify({ name, root_path: rootPath, read_only: true, notes }) }); setRootPath(""); setNotes(""); onSaved(); } catch (error) { onError(`Storage mapping 등록 오류: ${String(error)}`); } };
+  const validate = async (id: string) => { try { await api(`/projects/${projectId}/storages/${id}/validate`, { method: "POST" }); onSaved(); } catch (error) { onError(`Storage 검사 오류: ${String(error)}`); } };
+  const browse = async (storageId: string, relativePath = "") => { try { const value = await api<{ relative_path: string; entries: Array<{ name: string; relative_path: string; kind: string; size?: number }> }>(`/projects/${projectId}/storages/${storageId}/browse`, { method: "POST", body: JSON.stringify({ relative_path: relativePath }) }); setBrowser({ storageId, relativePath: value.relative_path, entries: value.entries }); } catch (error) { onError(`Storage 탐색 오류: ${String(error)}`); } };
+  return <><section><span className="step-label">STEP 1 · STORAGE</span><h2>프로젝트 자료 위치 연결</h2><p>이미지, annotation, 모델, config가 있는 서버/NAS 디렉터리를 읽기 전용 mapping으로 등록합니다. 경로는 로컬 DB에만 저장되며 Pages export에서는 제외됩니다.</p><form className="form two" onSubmit={(event) => void save(event)}><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="예: dataset-root"/><input required value={rootPath} onChange={(event) => setRootPath(event.target.value)} placeholder="서버/NAS 절대 경로, 예: /mnt/vision-data"/><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="용도(선택)"/><button disabled={isStatic} type="submit">연결 검사 후 등록</button></form></section>
+  <section><h2>등록된 Storage mapping</h2><div className="tablewrap"><table><thead><tr><th>이름</th><th>상태</th><th>접근</th><th>메모</th><th>작업</th></tr></thead><tbody>{storages.length ? storages.map((storage) => <tr key={storage.id}><td><b>{storage.name}</b></td><td><span className="pill">{storage.status}</span></td><td>{storage.read_only ? "읽기 전용" : "읽기/쓰기"}</td><td>{storage.notes || "—"}</td><td><button className="table-action" disabled={isStatic} onClick={() => void validate(storage.id)}>다시 검사</button><button className="table-action" disabled={isStatic} onClick={() => void browse(storage.id)}>탐색</button></td></tr>) : <tr><td colSpan={5}>아직 연결된 디렉터리가 없습니다.</td></tr>}</tbody></table></div>{browser && <div className="subform"><h3>탐색: {storages.find((storage) => storage.id === browser.storageId)?.name} / {browser.relativePath || "."}</h3><div className="file-list">{browser.relativePath && <button className="table-action" onClick={() => void browse(browser.storageId, browser.relativePath.split("/").slice(0, -1).join("/"))}>상위 폴더</button>}{browser.entries.map((entry) => entry.kind === "directory" ? <button className="table-action" key={entry.relative_path} onClick={() => void browse(browser.storageId, entry.relative_path)}>📁 {entry.name}</button> : <span key={entry.relative_path}>📄 {entry.name}{entry.size !== undefined ? ` (${entry.size} B)` : ""}</span>)}</div></div>}</section></>;
 }
 function AgentPrompt({ projectId, onError }: { projectId: string; onError: (message: string) => void }) {
   const [prompt, setPrompt] = useState("");

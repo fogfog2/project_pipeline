@@ -22,7 +22,7 @@
 
 DB 모델, API, CLI, worker, evaluator, 추론 adapter, 프런트엔드, 예제와 기존 테스트를 읽고 사용자 흐름의 연결 여부를 확인했다. 이후 U0의 일부 보수와 빈 프로젝트 UI가 반영되었으며, 아래 표와 결함 목록은 전체 누락을 추적하는 기준이다.
 
-기존 테스트는 `backend/tests/conftest.py`가 프로세스별 `/tmp` DB를 주입한 뒤 해당 테스트 DB에 `drop_all()`을 호출한다. 사용자 `.vision-lifecycle/registry.db`는 대상이 아니다. 17개 테스트 통과는 P0 회귀와 fixture 검증이며 전체 시나리오 완료의 근거가 아니다.
+기존 테스트는 `backend/tests/conftest.py`가 프로세스별 `/tmp` DB를 주입한 뒤 해당 테스트 DB에 `drop_all()`을 호출한다. 사용자 `.vision-lifecycle/registry.db`는 대상이 아니다. 현재 19개 테스트 통과는 P0 회귀와 storage/fingerprint fixture 검증이며 전체 시나리오 완료의 근거가 아니다.
 
 DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 

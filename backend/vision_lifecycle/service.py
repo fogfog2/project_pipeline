@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import DatasetVersion, Job, ModelVersion, Project, Release, Run, TargetProfile
+from .models import DatasetVersion, Job, ModelVersion, Project, Release, Run, StorageMapping, TargetProfile
 
 
 def overview(session: Session, project_id: str) -> dict:
@@ -120,8 +120,22 @@ def safe_export(session: Session, project_id: str) -> dict:
 
     def safe(item):
         data = as_dict(item)
-        for key in {"storage_root", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"}:
+        for key in {"storage_root", "root_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"}:
             data.pop(key, None)
+        # A dataset fingerprint is useful for tamper detection, but its internal
+        # detail keys are source paths.  Pages exports must stay portable and
+        # must not disclose machine/NAS layouts.
+        if isinstance(data.get("validation"), dict):
+            validation = dict(data["validation"])
+            fingerprints = validation.pop("source_fingerprints", None)
+            if fingerprints:
+                validation["source_fingerprint_count"] = len(fingerprints)
+            data["validation"] = validation
+        if isinstance(data.get("last_validation"), dict):
+            data["last_validation"] = {
+                key: value for key, value in data["last_validation"].items()
+                if key in {"status", "readable", "writable", "reason"}
+            }
         return data
 
     return {
@@ -129,9 +143,10 @@ def safe_export(session: Session, project_id: str) -> dict:
         "datasets": [safe(x) for x in session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()],
         "models": [safe(x) for x in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()],
         "runs": [safe(x) for x in session.scalars(select(Run).where(Run.project_id == project_id)).all()],
+        "storages": [safe(x) for x in session.scalars(select(StorageMapping).where(StorageMapping.project_id == project_id)).all()],
         "targets": [safe(x) for x in session.scalars(select(TargetProfile).where(TargetProfile.project_id == project_id)).all()],
         "releases": [safe(x) for x in session.scalars(select(Release).where(Release.project_id == project_id)).all()],
-        "redactions": ["storage_root", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"],
+        "redactions": ["storage_root", "root_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"],
     }
 
 

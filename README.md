@@ -1,12 +1,13 @@
 # Vision Lifecycle
 
-Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이터, 학습 결과, 모델 bundle, ONNX export, 양자화, 평가, 보드 benchmark를 하나의 lineage로 연결하는 로컬 관리 시스템이다.
+Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이터, 학습 결과, 모델 bundle, ONNX export, 양자화, 평가, 보드 benchmark를 하나의 lineage로 연결하는 로컬 관리 시스템이다. 새 프로젝트와 실습 프로젝트는 모두 빈 상태에서 시작한다.
 
 첫 온보딩 예제는 MMDetection 3.3.0 계열의 **RTMDet-tiny**와 **YOLOX-s**다. 두 모델을 동일 COCO evaluation set에서 baseline/candidate로 비교하는 흐름을 제공한다.
 
 ## 제공 기능
 
 - SQLite 기반 Project, DatasetVersion, ModelVersion, Run, Job registry
+- 읽기 전용 Storage mapping 등록·재검사·root 내부 탐색과 annotation/manifest fingerprint 변경 감지
 - COCO annotation validation과 external prediction JSON의 onboarding AP50 또는 공식 COCO AP@[.50:.95] 평가
 - 분류 prediction record 기반 Top-1/Top-K·macro F1·confusion matrix 평가
 - COCO·YOLO TXT·classification folder/CSV 경로 검사
@@ -52,7 +53,9 @@ npm run dev
 
 API를 8001번으로 실행한 경우에는 `VITE_API_PORT=8001 npm run dev`를 사용한다.
 
-브라우저에서 `http://127.0.0.1:5173`를 열고 **MMDetection 데모 시작**을 선택한다. API 문서는 `http://127.0.0.1:8000/docs`에서 확인한다.
+브라우저에서 `http://127.0.0.1:5173`를 열고 **빈 프로젝트 만들기** 또는 **MMDetection · YOLOX 실습 시작(빈 상태)**을 선택한다. 먼저 **연결·설정**에서 이미지·annotation·모델이 있는 서버/NAS root를 Storage mapping으로 등록·검사한 뒤, 데이터와 모델을 단계별로 연결한다. API 문서는 `http://127.0.0.1:8000/docs`에서 확인한다.
+
+Storage mapping은 서버가 접근할 수 있는 경로를 등록하는 기능이다. 브라우저에서 고른 로컬 파일을 자동 업로드하지 않으며, 등록·검사만으로 외부 명령을 실행하지 않는다. Dataset 초안에 연결한 annotation/manifest의 내용이 바뀌면 prediction 평가를 중단하므로 새 버전을 만든 뒤 다시 확정한다.
 
 ## CLI 온보딩
 
@@ -101,7 +104,7 @@ skill은 자료를 조사하고, 확인 가능한 lineage와 누락된 provenanc
 
 원본 계획의 전체 시나리오는 아직 구현되지 않았다. 현재 코드에 근거한 지원 상태와 다음 개발 순서는 [Lifecycle 시나리오 점검 및 추가 개발 계획](docs/lifecycle-gap-analysis.md)을 기준으로 한다. 데이터 snapshot·label/split/calibration 버전, artifact 보존, 통합 평가·양자화 비교·Release 흐름이 남아 있다.
 
-현재 테스트의 일부는 기본 로컬 DB를 삭제·재생성한다. 기존 자료가 있는 작업 폴더에서 아래 테스트 명령을 실행하지 말고, 테스트 DB 격리 개선 전에는 별도의 임시 checkout과 빈 DB에서 실행한다.
+테스트는 프로세스별 임시 SQLite DB를 사용하며 기존 `.vision-lifecycle/registry.db`를 변경하지 않는다.
 
 이 첫 버전은 registry, demo, COCO annotation 검증, external prediction JSON 기반 onboarding AP50 및 공식 COCO 평가, 비교 API, 경로 검사, runner profile·모의 보드 job, target profile, release gate, UI와 Pages workflow를 제공한다. 실제 MMDetection/MMDeploy 변환은 각 target SDK 환경에서 수행해 산출물과 결과 manifest를 연결한다. file upload wizard와 특정 vendor board recipe는 하드웨어·운영 환경이 정해진 뒤 추가할 확장 지점이다.
 
