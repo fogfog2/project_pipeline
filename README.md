@@ -25,6 +25,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - typed QuantizationRun과 BoardBenchmark 등록·조회, calibration/model/target/evaluation lineage 검증
 - 양자화 encoding 파일을 별도 artifact로 hash 보존하고 실행·보드 화면에서 재검증
 - Target Profile에 hardware와 firmware/accelerator/runtime metadata를 분리해 기록
+- 보드 raw output 파일을 summary metric과 분리한 artifact로 보존하고 hash를 재검증
 - 실험 화면에서 외부 training Run의 typed provenance(framework·commit·seed·split·label schema·unknown)와 dataset·config·metrics·environment·external ID를 등록하고 모델 연결에 재사용
 - 실험 화면에서 학습·양자화·보드 표준 result manifest를 직접 import하고 동일 external ID의 idempotency/충돌을 확인
 - 명시적 FP32·QuantSim·Target 평가 계약 검증과 Quantization Loss·Target Gap 비교 결과 저장

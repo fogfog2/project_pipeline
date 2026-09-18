@@ -180,6 +180,7 @@ class BoardBenchmark(Base, Timestamped):
     status: Mapped[str] = mapped_column(String(40), default="registered")
     metrics: Mapped[dict] = mapped_column(JSON, default=dict)
     measurement: Mapped[dict] = mapped_column(JSON, default=dict)
+    raw_output_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_output_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
 

@@ -123,6 +123,7 @@ class BoardBenchmarkCreate(BaseModel):
     status: str = "registered"
     metrics: dict[str, float] = Field(default_factory=dict)
     measurement: dict[str, Any] = Field(default_factory=dict)
+    raw_output_path: str | None = None
     raw_output_hash: str | None = None
     notes: str = ""
 

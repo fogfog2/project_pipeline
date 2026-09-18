@@ -992,7 +992,37 @@ def create_board_benchmark(project_id: str, payload: BoardBenchmarkCreate, sessi
     if values["measurement"]["contract_validation"]["status"] == "failed":
         raise HTTPException(422, f"Invalid board measurement: {values['measurement']['contract_validation']['errors']}")
     item = BoardBenchmark(project_id=project_id, **values)
-    session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+    session.add(item); session.flush()
+    if payload.raw_output_path:
+        output_artifact = register_artifact(
+            session,
+            project_id,
+            kind="board-output",
+            logical_name=f"{item.name}/{item.id}/raw-output",
+            owner_type="board",
+            owner_id=item.id,
+            source_path=payload.raw_output_path,
+            notes="Raw board measurement output; keep separate from summary metrics.",
+        )
+        session.flush()
+        item.raw_output_hash = output_artifact.sha256 or payload.raw_output_hash
+        item.measurement = {**(item.measurement or {}), "raw_output_artifact_id": output_artifact.id}
+    session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.post("/api/v1/projects/{project_id}/board-benchmarks/{benchmark_id}/verify-output")
+def verify_board_output(project_id: str, benchmark_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    item = session.get(BoardBenchmark, benchmark_id)
+    if not item or item.project_id != project_id:
+        raise HTTPException(404, "Board benchmark not found")
+    artifact_id = (item.measurement or {}).get("raw_output_artifact_id")
+    artifact = session.get(Artifact, artifact_id) if artifact_id else None
+    if not artifact or artifact.project_id != project_id:
+        raise HTTPException(422, "Board benchmark has no registered raw output artifact")
+    result = verify_artifact(artifact)
+    session.commit()
+    return {"benchmark_id": item.id, "ok": result["status"] in {"verified", "managed"}, "artifact": result}
 
 
 @app.get("/api/v1/projects/{project_id}/models")

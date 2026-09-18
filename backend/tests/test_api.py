@@ -280,6 +280,27 @@ def test_quantization_encoding_artifact_is_registered_and_verified(tmp_path):
         assert verified.json()["ok"] is True
 
 
+def test_board_raw_output_artifact_is_registered_and_verified(tmp_path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    raw_output = tmp_path / "board.log"
+    raw_output.write_text("latency_ms_p50=4.2\n", encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "board-output-artifact"}).json()["id"]
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "int8", "version": "v1", "family": "fixture"}).json()
+        target = client.post(f"/api/v1/projects/{project_id}/targets", json={"name": "board", "version": "v1"}).json()
+        created = client.post(f"/api/v1/projects/{project_id}/board-benchmarks", json={
+            "name": "board-run", "model_id": model["id"], "target_profile_id": target["id"],
+            "raw_output_path": str(raw_output), "metrics": {"latency_ms_p50": 4.2},
+            "measurement": {"source": "external", "scope": "batch", "batch_size": 1, "warmup_runs": 5, "iterations": 10, "units": {"latency_ms_p50": "ms"}},
+        })
+        assert created.status_code == 201, created.text
+        assert created.json()["raw_output_hash"]
+        verified = client.post(f"/api/v1/projects/{project_id}/board-benchmarks/{created.json()['id']}/verify-output")
+        assert verified.status_code == 200
+        assert verified.json()["ok"] is True
+
+
 def test_quantization_loss_and_target_gap_require_compatible_evaluations():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

@@ -79,3 +79,6 @@ def init_database() -> None:
         target_columns = {column["name"] for column in inspect(engine).get_columns("target_profiles")}
         if "metadata_json" not in target_columns:
             connection.exec_driver_sql("ALTER TABLE target_profiles ADD COLUMN metadata_json JSON NOT NULL DEFAULT '{}'")
+        board_columns = {column["name"] for column in inspect(engine).get_columns("board_benchmarks")}
+        if "raw_output_path" not in board_columns:
+            connection.exec_driver_sql("ALTER TABLE board_benchmarks ADD COLUMN raw_output_path TEXT")

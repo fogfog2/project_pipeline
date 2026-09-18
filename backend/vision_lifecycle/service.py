@@ -256,7 +256,7 @@ def safe_export(session: Session, project_id: str) -> dict:
 
     def safe(item):
         data = as_dict(item)
-        for key in {"storage_root", "root_path", "source_path", "managed_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"}:
+        for key in {"storage_root", "root_path", "source_path", "managed_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "raw_output_path", "command", "environment_names", "working_directory"}:
             data.pop(key, None)
         # A dataset fingerprint is useful for tamper detection, but its internal
         # detail keys are source paths.  Pages exports must stay portable and
@@ -306,7 +306,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "releases": [safe(x) for x in session.scalars(select(Release).where(Release.project_id == project_id)).all()],
         "release_evidence": [safe(x) for x in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id)).all()],
         "audit_events": [safe(x) for x in session.scalars(select(AuditEvent).where(AuditEvent.project_id == project_id).order_by(AuditEvent.created_at.desc())).all()],
-        "redactions": ["storage_root", "root_path", "source_path", "managed_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"],
+        "redactions": ["storage_root", "root_path", "source_path", "managed_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "raw_output_path", "command", "environment_names", "working_directory"],
     }
 
 
