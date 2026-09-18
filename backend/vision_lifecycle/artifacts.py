@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .fingerprints import file_sha256
@@ -21,6 +22,10 @@ def register_artifact(
     notes: str = "",
 ) -> Artifact:
     """Register a portable logical file reference and verify it when accessible."""
+    if owner_type and owner_id:
+        previous = session.scalars(select(Artifact).where(Artifact.project_id == project_id, Artifact.owner_type == owner_type, Artifact.owner_id == owner_id, Artifact.kind == kind, Artifact.status != "superseded")).all()
+        for item in previous:
+            item.status = "superseded"
     path = Path(source_path).expanduser() if source_path else None
     digest = sha256
     size = 0

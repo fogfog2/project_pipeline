@@ -69,6 +69,11 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         artifact.write_bytes(b"changed-model")
         drift = client.post(f"/api/v1/projects/{project_id}/models/{model['id']}/verify-artifacts")
         assert drift.json()["ok"] is False and any(item["status"] == "drifted" for item in drift.json()["artifacts"])
+        replacement = tmp_path / "model-v2.onnx"; replacement.write_bytes(b"onnx-v2")
+        updated = client.patch(f"/api/v1/projects/{project_id}/models/{model['id']}", json={"artifact_path": str(replacement)})
+        assert updated.status_code == 200
+        current_artifacts = client.get(f"/api/v1/projects/{project_id}/artifacts").json()
+        assert any(item["status"] == "superseded" for item in current_artifacts if item["kind"] == "model")
         annotation.write_text(annotation.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         response = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
             "model_id": model["id"], "dataset_id": dataset["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",

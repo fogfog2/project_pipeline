@@ -656,7 +656,7 @@ def verify_model_artifacts(project_id: str, model_id: str, session: Session = De
     model = session.get(ModelVersion, model_id)
     if not model or model.project_id != project_id:
         raise HTTPException(404, "Model not found")
-    artifacts = session.scalars(select(Artifact).where(Artifact.project_id == project_id, Artifact.owner_type == "model", Artifact.owner_id == model.id)).all()
+    artifacts = session.scalars(select(Artifact).where(Artifact.project_id == project_id, Artifact.owner_type == "model", Artifact.owner_id == model.id, Artifact.status != "superseded")).all()
     results = [verify_artifact(artifact) for artifact in artifacts]
     session.commit()
     return {"model_id": model.id, "ok": all(item["status"] in {"verified", "directory", "registered"} for item in results), "artifacts": results}
