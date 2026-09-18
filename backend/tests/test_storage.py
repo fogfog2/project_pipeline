@@ -108,6 +108,32 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path, mon
         assert all("managed_path" not in item for item in exported.json()["artifacts"])
 
 
+def test_calibration_image_statistics_are_recorded(tmp_path: Path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    from PIL import Image
+
+    image_path = tmp_path / "calibration.jpg"
+    Image.new("RGB", (4, 2), (10, 20, 30)).save(image_path)
+    annotation = tmp_path / "calibration.json"
+    annotation.write_text(json.dumps({
+        "images": [{"id": 1, "file_name": image_path.name, "width": 4, "height": 2}],
+        "annotations": [], "categories": [],
+    }), encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "calibration-stats"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "images", "version": "v1", "annotation_path": str(annotation)}).json()
+        calibration = client.post(f"/api/v1/projects/{project_id}/calibration-sets", json={"name": "cal", "version": "v1", "dataset_id": dataset["id"], "sampling": {"items": [1]}, "preprocessing": {"color": "rgb"}}).json()
+        inspected = client.post(f"/api/v1/projects/{project_id}/calibration-sets/{calibration['id']}/inspect")
+        assert inspected.status_code == 200, inspected.text
+        stats = inspected.json()["statistics"]
+        assert stats["status"] == "complete"
+        assert stats["inspected_count"] == 1
+        assert stats["resolutions"] == {"4x2": 1}
+        assert stats["channels"] == {"3": 1}
+        assert stats["pixel_mean_0_255"] == 20.0
+
+
 def test_dataset_snapshot_and_diff(tmp_path: Path):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

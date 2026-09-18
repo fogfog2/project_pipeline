@@ -19,6 +19,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 승인된 local runner profile과 모의 보드 runner의 작업 상태·로그 관리
 - 서비스 재시작 시 active job을 `interrupted`로 보존하고 자동 재실행하지 않는 복구 처리
 - 실패·timeout·cancelled·interrupted 작업을 원본 입력 snapshot으로 명시적으로 재시도
+- 등록된 runner는 POSIX에서 별도 process group으로 실행되어 취소·timeout 시 하위 프로세스까지 종료
 - 작업 화면에서 전체 로그와 exit code/runner 결과를 펼쳐 보고, external worker 모드에서는 재시도 작업을 queue에 남겨 worker가 가져가도록 처리
 - typed QuantizationRun과 BoardBenchmark 등록·조회, calibration/model/target/evaluation lineage 검증
 - 실험 화면에서 외부 training Run의 typed provenance(framework·commit·seed·split·label schema·unknown)와 dataset·config·metrics·environment·external ID를 등록하고 모델 연결에 재사용
@@ -59,7 +60,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - Label schema version 간 parent mapping과 lineage를 보존해 class 변경 이력을 역추적
 - evaluation set `definition.items`/`image_ids`를 실제 분류·COCO·ONNX batch 평가 입력으로 적용하고 선택 개수와 평가 레코드 수를 결과에 기록
 - Evaluation set 생성 시 중복·누락·Dataset 범위·빈 목록을 검증하고 데이터 확정 후 UI에서 재검증
-- Calibration set의 sample/중복/seed/전처리 선언 검증 및 validation statistics
+- Calibration set의 sample/중복/seed/전처리 선언 검증, bounded 실제 이미지 해상도·채널·pixel 통계 및 validation statistics
 - COCO annotation image/category/bbox 샘플 preview
 - baseline/candidate의 호환성 검사와 metric delta 비교
 - 평가·비교 화면의 metric delta/호환성 사유/Run 계약 상세와 JSON report 다운로드

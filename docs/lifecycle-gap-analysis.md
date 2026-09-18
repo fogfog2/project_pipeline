@@ -45,14 +45,14 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S06 | §8: field 실패 사례를 다음 dataset으로 연결 | 부분 구현 | FieldDataBatch가 원본 모델·Dataset, 원본/예측/수정 label artifact, candidate DatasetVersion과 sample/failure 수를 연결하고 lineage에 표시한다. label 검수 workflow·candidate 승격 이력·개인정보 상태는 남아 있다 |
 | S07 | §9: 외부 학습 결과 등록 | 부분 구현 | 실험 화면/API에서 typed `training` provenance(framework/commit/seed/split/label schema/unknown)와 Run.config/environment/details 및 외부 ID를 등록하고, 참조의 프로젝트·Dataset 일치를 검증한다. 동일 내용은 idempotent, 다른 내용은 충돌로 처리하며 모델 등록 화면에서 외부 `training` Run을 명시적으로 선택해 연결한다. loss typed metric, config artifact 참조, parent 참조 검증은 남아 있다. `importer.py`, `main.py` |
 | S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 모델·config 파일의 SHA-256 provenance, 소유 entity, 원본과 관리 artifact 사본, 교체 시 superseded 이력, 재검증과 drift 시 inference 차단, alias 변경 사유·이력 조회, 원본 mount 부재 시 관리 사본 inference fallback을 제공한다. ONNX metadata 삽입/검증은 남아 있다 |
-| S09 | §11: 독립 calibration 버전·통계 | 부분 구현 | CalibrationSetVersion에 sample 수·중복·Dataset item·strategy/seed·전처리 선언 validation/statistics를 저장하고 재검사 API/UI를 제공한다. 실제 이미지 분포·tensor 통계와 대규모 sampling job은 남아 있다 |
+| S09 | §11: 독립 calibration 버전·통계 | 부분 구현 | CalibrationSetVersion에 sample 수·중복·Dataset item·strategy/seed·전처리 선언 validation/statistics를 저장하고 재검사 API/UI를 제공한다. 연결된 COCO 이미지의 bounded decoded sample에 대해 실제 파일 누락·decode 오류·해상도·채널·pixel 평균/표준편차를 `/inspect` API와 UI로 기록한다. 전처리를 적용한 tensor 통계와 대규모 sampling job은 남아 있다 |
 | S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | source/output model, calibration, encoding과 명시적 source/output role을 저장하고 matrix UI의 기본 입력을 제공한다. method별 matrix와 encoding artifact 검증은 남아 있다 |
 | S11 | §11: Quantization Loss·Target Gap 계산 | 부분 구현 | baseline·QuantSim·target 평가의 dataset/evaluator/protocol/scope/class mapping 계약을 검사해 Quantization Loss·Target Gap을 Run으로 저장한다. 다중 metric/critical class와 target 측정 범위 검증은 남아 있다 |
 | S12 | §12: 분류·검출 공통 평가 | 부분 구현 | 외부 prediction 기반 분류, AP50, pycocotools bbox 평가와 invalid image/class/bbox/score 검사, 명시적 ONNX image record batch 평가가 존재한다. 대규모 평가를 독립 worker job으로 실행하는 흐름과 고급 전처리/후처리 profile은 남아 있다 |
 | S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 분류 confusion/per-class와 COCO per-class/invalid 결과를 Run.details에 저장하고 재조회 가능하며, classification record의 명시적 confidence에 대해 ECE/bin과 `slice`/`slices`별 지표를 계산한다. micro 지표, 고정 Top-K 규약, detection slice·오류 파일·시각화 artifact는 남아 있다 |
 | S14 | §12,17: baseline/candidate 공식 비교 | 부분 구현·정확성 보완 필요 | 완료된 평가 중 동일 dataset·전체 평가 config·evaluator·class mapping 계약을 만족하는 최신 pair를 선택하고 latency 계약을 별도 검사한다. 다중 세트·slice·전체 설정 hash/승인 이력은 남아 있다. `service.py:compare_models` |
 | S15 | §13: target profile·외부 보드 결과 | 부분 구현 | target 행 등록·board import 연결과 metric 유한값/`source`·`scope`·batch·warmup·iterations·units 측정 계약 검증을 제공한다. target 환경/firmware/accelerator typed 규격, raw output artifact 검증 및 board 결과에서 공통 평가 연결은 남아 있다 |
-| S16 | §13: 외부 작업 실행·취소·복구 | 부분 구현 | subprocess runner와 독립 worker 모드, 재시작 복구, 전체 로그·exit code 표시, 외부 worker 재시도 queue 보존을 제공한다. 실시간 websocket 로그·취소 경쟁 조건·자식 프로세스 그룹 종료 보완 필요. `runner.py` |
+| S16 | §13: 외부 작업 실행·취소·복구 | 부분 구현 | subprocess runner와 독립 worker 모드, 재시작 복구, 전체 로그·exit code 표시, 외부 worker 재시도 queue 보존을 제공한다. 취소 의도를 먼저 저장하고 POSIX process group을 종료하며 timeout도 하위 프로세스까지 정리한다. 실시간 websocket 로그·취소 lease/다중 worker 경쟁 제어 보완이 남아 있다. `runner.py`, `main.py` |
 | S17 | §14: 다단계 release gate·승인 | 부분 구현·정확성 보완 필요 | 단일 평가 scalar 규칙과 baseline dataset/evaluator/protocol/scope/class mapping 호환성 검사를 제공하며, Release 생성 시 evaluation/board/quantization/artifact evidence snapshot/hash와 required evidence 누락 INCOMPLETE를 기록한다. 주요 registry 변경의 local AuditEvent 이력은 제공하지만 다중 세트·critical class·인증된 승인자·승인 워크플로는 남아 있다 |
 | S18 | §15,20: Production부터 원본까지 drill-down | 부분 구현 | Dataset·Model·Run 소유 artifact 노드와 `has_artifact` edge를 lineage API/화면에서 조회 가능. 양자화·Release 증거의 상세 drill-down과 변경 이력은 남아 있다 |
 | S19 | 후속 요구: 처음 사용자 UI만으로 온보딩 | 부분 구현 | 프로젝트/모델/target 입력, 경로 검사, recipe별 저장·재개 wizard와 단계별 readiness/막힌 이유 표시를 제공한다. dataset 등록·확정, Git/storage/runner 편집, 평가 실행·release 폼의 통합 wizard 흐름은 남아 있다. `frontend/src/main.tsx` |
@@ -119,7 +119,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 
 ### E. 외부 작업·보드·Release — P1
 
-- 독립 worker, DB queue claim/lease, 재시작 시 interrupted 상태, 자동 재실행 금지. job input/output contract, 실시간 로그, exit code, process group 취소·timeout 및 비밀값 마스킹.
+- 독립 worker, DB queue claim/lease, 재시작 시 interrupted 상태, 자동 재실행 금지. job input/output contract, 전체 로그, exit code, POSIX process group 취소·timeout 및 비밀값 마스킹.
 - runner 등록/검사/실행 UI, 업로드·다운로드는 명시적 실행 버튼으로 수행. 실행 파일과 구조화 인수·작업 폴더·환경변수 이름·timeout을 저장한다.
 - TargetProfile의 hardware/OS/firmware/runtime/accelerator/execution version 규격화, BoardBenchmark에 측정 범위·batch·warmup·횟수·단위·raw output hash 기록.
 - target prediction은 공통 평가기로, summary metric은 external measurement로 구분. mock worker 결과는 실제 성능에서 제외.

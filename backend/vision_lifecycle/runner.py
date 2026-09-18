@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -18,6 +19,42 @@ from .storage import inventory as inventory_storage
 
 _processes: dict[str, subprocess.Popen[str]] = {}
 _lock = threading.Lock()
+
+
+def _signal_process_group(process: subprocess.Popen[str], signal_number: int) -> None:
+    """Signal a runner and its descendants when the platform supports it."""
+    if process.poll() is not None:
+        return
+    if os.name == "posix":
+        try:
+            os.killpg(os.getpgid(process.pid), signal_number)
+            return
+        except (OSError, ProcessLookupError):
+            # The process may have exited between poll() and killpg(). Fall
+            # through to the direct signal so cancellation remains best effort.
+            pass
+    try:
+        if signal_number == getattr(signal, "SIGTERM", 15):
+            process.terminate()
+        else:
+            process.kill()
+    except (OSError, ProcessLookupError):
+        pass
+
+
+def _stop_process(process: subprocess.Popen[str], *, grace_seconds: float = 2.0) -> str:
+    """Stop a runner process group and return the final captured output."""
+    _signal_process_group(process, getattr(signal, "SIGTERM", 15))
+    try:
+        output, _ = process.communicate(timeout=max(0.1, grace_seconds))
+        return output or ""
+    except subprocess.TimeoutExpired:
+        _signal_process_group(process, getattr(signal, "SIGKILL", 9))
+        output, _ = process.communicate()
+        captured = output or ""
+        if error.output:
+            captured = f"{error.output}{captured}"
+        return captured
 
 
 def recover_interrupted(*, include_queued: bool = True) -> int:
@@ -121,7 +158,19 @@ def _run_profile(job_id: str, profile_id: str, args: list[str]) -> None:
     environment = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""), "LANG": os.environ.get("LANG", "C.UTF-8"), **allowed_environment}
     _append_log(job_id, f"Runner started: {command[0]}\n", status="running")
     try:
-        process = subprocess.Popen(command, cwd=working_directory or None, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.Popen(
+            command,
+            cwd=working_directory or None,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            # A runner commonly launches a shell, framework process, or board
+            # utility. Keeping a separate session lets cancellation and
+            # timeout terminate the complete process tree instead of leaving
+            # grandchildren alive in the background.
+            start_new_session=(os.name == "posix"),
+        )
         with _lock:
             _processes[job_id] = process
         output, _ = process.communicate(timeout=timeout)
@@ -132,13 +181,17 @@ def _run_profile(job_id: str, profile_id: str, args: list[str]) -> None:
             was_cancelled = bool(current and current.status == "cancelling")
         current_status = "cancelled" if was_cancelled else "completed" if process.returncode == 0 else "failed"
         _append_log(job_id, output or "", status=current_status, result={"exit_code": process.returncode, "runner": profile_id})
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as error:
         with _lock:
             process = _processes.pop(job_id, None)
         if process:
-            process.kill()
-            output, _ = process.communicate()
-            _append_log(job_id, output or "", status="timed_out", result={"runner": profile_id, "timeout_seconds": timeout})
+            output = _stop_process(process)
+            with SessionLocal() as session:
+                current = session.get(Job, job_id)
+                was_cancelled = bool(current and current.status == "cancelling")
+            status = "cancelled" if was_cancelled else "timed_out"
+            result = {"runner": profile_id, "timeout_seconds": timeout}
+            _append_log(job_id, output or "", status=status, result=result)
         else:
             _append_log(job_id, "Runner timed out.\n", status="timed_out")
     except OSError as error:

@@ -33,7 +33,7 @@ from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
 from .split_validation import validate_split_definition
-from .calibration_validation import validate_calibration_definition
+from .calibration_validation import inspect_calibration_statistics, validate_calibration_definition
 from .evaluation_validation import validate_evaluation_definition
 from .board_validation import validate_board_measurement
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
@@ -835,6 +835,28 @@ def validate_calibration_set(project_id: str, calibration_id: str, session: Sess
     return as_dict(item)
 
 
+@app.post("/api/v1/projects/{project_id}/calibration-sets/{calibration_id}/inspect")
+def inspect_calibration_set(project_id: str, calibration_id: str, session: Session = Depends(get_session)):
+    """Collect bounded decoded-image evidence for a calibration contract."""
+    require_project(session, project_id)
+    item = session.get(CalibrationSetVersion, calibration_id)
+    if not item or item.project_id != project_id:
+        raise HTTPException(404, "Calibration set not found")
+    dataset = _version_dataset(session, project_id, item.dataset_id)
+    if not dataset:
+        raise HTTPException(422, "Calibration statistics require a linked DatasetVersion")
+    statistics = inspect_calibration_statistics(
+        sampling=item.sampling,
+        preprocessing=item.preprocessing,
+        dataset_annotation_path=dataset.annotation_path,
+        dataset_manifest_path=dataset.manifest_path,
+        snapshot=dataset.snapshot,
+    )
+    item.validation = {**(item.validation or {}), "statistics": statistics}
+    session.commit(); session.refresh(item)
+    return {"calibration_set": as_dict(item), "statistics": statistics}
+
+
 def _project_entity(session: Session, entity, identifier: str | None, project_id: str, label: str):
     if not identifier:
         return None
@@ -1452,10 +1474,21 @@ def cancel_job(project_id: str, job_id: str, session: Session = Depends(get_sess
         raise HTTPException(404, "Job not found")
     if job.status not in {"queued", "running"}:
         raise HTTPException(409, f"Job cannot be cancelled from {job.status}")
-    if cancel(job_id):
+    # Persist the intent before signalling the subprocess. The runner can
+    # exit immediately, so writing this first prevents a cancellation race
+    # from being reported as a completed job.
+    if job.status == "running":
         job.status = "cancelling"
+        job.log = f"{job.log}Cancellation requested; stopping runner process group.\n"
         session.commit()
-        return as_dict(job)
+        if cancel(job_id):
+            session.refresh(job)
+            return as_dict(job)
+        # The process may have exited between the status read and signal. The
+        # runner will have written its terminal status if it owned the job.
+        session.refresh(job)
+        if job.status not in {"cancelling", "running"}:
+            return as_dict(job)
     job.status = "cancelled"
     job.log = f"{job.log}Cancelled before process start.\n"
     session.commit(); session.refresh(job)

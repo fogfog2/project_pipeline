@@ -1,5 +1,6 @@
 from pathlib import Path
 from time import sleep
+import sys
 
 from fastapi.testclient import TestClient
 
@@ -121,6 +122,55 @@ def test_retry_keeps_queued_for_external_worker(monkeypatch):
         retried = client.post(f"/api/v1/projects/{project_id}/jobs/{created['id']}/retry")
         assert retried.status_code == 201
         assert retried.json()["status"] == "queued"
+
+
+def test_runner_cancellation_stops_profile_process_group():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "cancel-profile"}).json()["id"]
+        profile = client.post(f"/api/v1/projects/{project_id}/runners", json={
+            "name": "sleep runner", "executable": sys.executable,
+            "default_args": ["-c", "import time; print('runner-started', flush=True); time.sleep(30)"],
+            "timeout_seconds": 60,
+        }).json()
+        created = client.post(f"/api/v1/projects/{project_id}/jobs", json={"runner_id": profile["id"]}).json()
+        job_id = created["id"]
+        for _ in range(100):
+            current = next(item for item in client.get(f"/api/v1/projects/{project_id}/jobs").json() if item["id"] == job_id)
+            if current["status"] == "running":
+                break
+            sleep(0.01)
+        cancelled = client.post(f"/api/v1/projects/{project_id}/jobs/{job_id}/cancel")
+        assert cancelled.status_code == 200
+        for _ in range(100):
+            current = next(item for item in client.get(f"/api/v1/projects/{project_id}/jobs").json() if item["id"] == job_id)
+            if current["status"] in {"cancelled", "failed", "timed_out"}:
+                break
+            sleep(0.02)
+        assert current["status"] == "cancelled"
+        assert "Cancellation requested" in current["log"]
+
+
+def test_runner_timeout_records_terminal_status():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "timeout-profile"}).json()["id"]
+        profile = client.post(f"/api/v1/projects/{project_id}/runners", json={
+            "name": "short runner", "executable": sys.executable,
+            "default_args": ["-c", "import time; time.sleep(5)"],
+            "timeout_seconds": 1,
+        }).json()
+        created = client.post(f"/api/v1/projects/{project_id}/jobs", json={"runner_id": profile["id"]}).json()
+        job_id = created["id"]
+        for _ in range(180):
+            current = next(item for item in client.get(f"/api/v1/projects/{project_id}/jobs").json() if item["id"] == job_id)
+            if current["status"] == "timed_out":
+                break
+            sleep(0.02)
+        assert current["status"] == "timed_out"
+        assert current["result_json"]["timeout_seconds"] == 1
 
 
 def test_onboarding_session_persists_step_evidence():
