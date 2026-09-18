@@ -16,15 +16,31 @@ def evaluate_classification(records: list[dict[str, Any]]) -> dict:
     labels: set[str] = set()
     matrix: dict[str, Counter] = defaultdict(Counter)
     top_k_hits = 0
+    seen_image_ids: set[str] = set()
     for index, record in enumerate(records):
         required = {"image_id", "ground_truth", "prediction"}
         missing = required - record.keys()
         if missing:
             errors.append({"index": index, "reason": f"missing: {', '.join(sorted(missing))}"})
             continue
+        image_id = str(record["image_id"])
+        if not image_id:
+            errors.append({"index": index, "reason": "image_id must not be empty"})
+            continue
+        if image_id in seen_image_ids:
+            errors.append({"index": index, "reason": "duplicate image_id"})
+            continue
+        seen_image_ids.add(image_id)
         truth, prediction = str(record["ground_truth"]), str(record["prediction"])
+        if not truth or not prediction:
+            errors.append({"index": index, "reason": "ground_truth and prediction must not be empty"})
+            continue
+        top_k = record.get("top_k", [prediction])
+        if not isinstance(top_k, list) or not top_k:
+            errors.append({"index": index, "reason": "top_k must be a non-empty list"})
+            continue
         labels.update([truth, prediction]); matrix[truth][prediction] += 1
-        if truth in [str(value) for value in record.get("top_k", [prediction])]:
+        if truth in [str(value) for value in top_k]:
             top_k_hits += 1
     valid = len(records) - len(errors)
     if not valid:

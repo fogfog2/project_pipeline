@@ -799,6 +799,12 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
         dataset = session.get(DatasetVersion, payload.dataset_id)
         if not dataset or dataset.project_id != project_id:
             raise HTTPException(422, "Dataset must belong to this project")
+        if dataset.class_names:
+            known = {str(value) for value in dataset.class_names}
+            supplied = {str(record.get(key)) for record in payload.records for key in ("ground_truth", "prediction") if record.get(key) is not None}
+            unknown = sorted(supplied - known)
+            if unknown:
+                raise HTTPException(422, f"Classification labels are not in the Dataset class mapping: {', '.join(unknown)}")
     try:
         result = evaluate_classification(payload.records)
     except ValueError as error:

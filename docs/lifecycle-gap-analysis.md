@@ -39,7 +39,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 |---|---|---|---|
 | S01 | §4: 미라벨 원본 이미지·영상부터 등록 | 미구현 | `DatasetVersion` 행은 생성 가능하나 개별 `DataAsset`, 원본 hash·metadata catalog 없음. `backend/vision_lifecycle/models.py` |
 | S02 | §3–4: immutable dataset, 이전 버전 재현·diff | 미구현 | 경로·버전 문자열 저장만 수행. 실제 내용 hash 생성/검증, item manifest, 원본 변경 시 평가 차단 없음. `main.py:create_dataset/evaluate_predictions` |
-| S03 | §5: 클래스 분리·통합·폐기와 legacy 평가 | 미구현 | `class_names` 배열, mapping version 문자열만 존재. 고정 class ID·계층·mapping history 없음 |
+| S03 | §5: 클래스 분리·통합·폐기와 legacy 평가 | 부분 구현 | Dataset class mapping과 분류 prediction의 unknown label을 검증하고, record 오류를 상세로 보존한다. 고정 class ID·계층·mapping history 없음 |
 | S04 | §6: 그룹 단위 split·누수 방지 | 미구현 | SplitVersion과 event/device/session 중복 검증 없음 |
 | S05 | §7: Core/Field/Hard/Regression 고정 평가 세트 | 미구현 | 평가가 일반 dataset_id만 참조. 별도 평가 세트·slice membership 없음 |
 | S06 | §8: field 실패 사례를 다음 dataset으로 연결 | 미구현 | FieldDataBatch, prediction/수정 label/원본 모델 관계, 후보 승격 이력 없음 |
@@ -49,7 +49,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | `kind=quantization` 일반 Run 저장만 가능. source/output model, calibration, encoding의 강제 참조와 matrix UI 없음 |
 | S11 | §11: Quantization Loss·Target Gap 계산 | 미구현 | FP32/QuantSim/Target 역할 및 동일 lineage의 결과 세 개를 선택하는 서비스 없음 |
 | S12 | §12: 분류·검출 공통 평가 | 부분 구현 | 외부 prediction 기반 분류, AP50, pycocotools bbox 평가와 invalid image/class/bbox/score 검사가 존재한다. 전체 dataset ONNX 실행 job·검증·저장 연결 없음 |
-| S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 분류 confusion/per-class와 COCO per-class/invalid 결과를 Run.details에 저장하고 재조회 가능. micro 지표, 고정 Top-K 규약, ECE, slice·오류 파일·시각화 artifact는 미구현 |
+| S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 분류 confusion/per-class와 COCO per-class/invalid 결과를 Run.details에 저장하고 재조회 가능. 기본 record/class mapping 오류도 기록한다. micro 지표, 고정 Top-K 규약, ECE, slice·오류 파일·시각화 artifact는 미구현 |
 | S14 | §12,17: baseline/candidate 공식 비교 | 부분 구현·정확성 보완 필요 | 최신 evaluation 하나씩 선택. dataset·evaluator 문자열·model mapping 검사만 존재. Run 완료 여부, 비어 있는 평가 ID, 전체 설정 hash 비교 부족. `service.py:compare_models` |
 | S15 | §13: target profile·외부 보드 결과 | 부분 구현 | target 행 등록·board import 연결 존재. 측정 단위/범위/환경 규격·산출물 검증 및 board 결과에서 공통 평가 연결 미완성 |
 | S16 | §13: 외부 작업 실행·취소·복구 | 부분 구현 | subprocess runner 존재. API 내부 daemon thread이며 독립 worker가 아님. 재시작 복구·실시간 로그·취소 경쟁 조건·자식 프로세스 종료 보완 필요. `runner.py` |

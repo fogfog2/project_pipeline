@@ -188,6 +188,17 @@ def test_classification_evaluation_api():
         assert runs[0]["details"]["confusion_matrix"]["dog"]["cat"] == 1
 
 
+def test_classification_dataset_mapping_rejects_unknown_label():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "classification-mapping", "task_kind": "classification"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "labels", "version": "v1", "task_kind": "classification", "class_names": ["cat", "dog"]}).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "classifier", "version": "v1", "family": "fixture", "task_kind": "classification"}).json()
+        response = client.post(f"/api/v1/projects/{project_id}/evaluations/classification", json={"model_id": model["id"], "dataset_id": dataset["id"], "records": [{"image_id": "1", "ground_truth": "cat", "prediction": "bird"}]})
+        assert response.status_code == 422
+
+
 def test_release_requires_compatible_baseline_for_regression_gate():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
