@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "schemas": {
+    "project": "project.schema.json",
+    "dataset": "dataset.schema.json",
+    "model": "model.schema.json",
+    "run": "run.schema.json",
+    "result-manifest": "result-manifest.schema.json",
+    "release": "release.schema.json"
+  }
+}

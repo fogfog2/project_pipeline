@@ -19,6 +19,7 @@ from .models import Artifact, DatasetVersion, ModelVersion, Project, StorageMapp
 from .runner import run_worker
 from .serializers import as_dict
 from .service import safe_export, seed_demo
+from . import schemas as contract_schemas
 
 
 def _json(value: object) -> None:
@@ -71,6 +72,8 @@ def main() -> None:
     sub.add_parser("init", help="Create the local SQLite registry")
     sub.add_parser("demo", help="Load the RTMDet and YOLOX onboarding demo")
     sub.add_parser("projects", help="List registered projects")
+    schema = sub.add_parser("schemas", help="Print versioned registry JSON Schemas")
+    schema.add_argument("--output", help="Optional JSON file for the complete schema registry")
     inspect = sub.add_parser("inspect", help="Detect a dataset path without registering it")
     inspect.add_argument("path")
     validate = sub.add_parser("validate-coco", help="Validate a COCO annotation file")
@@ -105,6 +108,25 @@ def main() -> None:
         _json(inspect_path(args.path)); return
     if args.command == "validate-coco":
         _json(validate_coco(args.annotation_path)); return
+    if args.command == "schemas":
+        registry = {
+            "schema_version": "1.0",
+            "schemas": {
+                "project": contract_schemas.ProjectCreate.model_json_schema(),
+                "dataset": contract_schemas.DatasetCreate.model_json_schema(),
+                "model": contract_schemas.ModelCreate.model_json_schema(),
+                "run": contract_schemas.RunCreate.model_json_schema(),
+                "result_manifest": contract_schemas.ResultImportCreate.model_json_schema(),
+                "release": contract_schemas.ReleaseCreate.model_json_schema(),
+            },
+        }
+        if args.output:
+            output = Path(args.output); output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print(f"Wrote schema registry: {output}")
+        else:
+            _json(registry)
+        return
     if args.command == "worker":
         run_worker(poll_seconds=args.poll_seconds, once=args.once); return
     db_path = Path(os.environ.get("VISION_LIFECYCLE_DB", ".vision-lifecycle/registry.db"))

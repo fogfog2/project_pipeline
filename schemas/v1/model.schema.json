@@ -1,0 +1,110 @@
+{
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    },
+    "family": {
+      "title": "Family",
+      "type": "string"
+    },
+    "task_kind": {
+      "default": "detection",
+      "title": "Task Kind",
+      "type": "string"
+    },
+    "format": {
+      "default": "pytorch",
+      "title": "Format",
+      "type": "string"
+    },
+    "precision": {
+      "default": "fp32",
+      "title": "Precision",
+      "type": "string"
+    },
+    "artifact_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Artifact Path"
+    },
+    "config_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Config Path"
+    },
+    "source_dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Dataset Id"
+    },
+    "source_run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Run Id"
+    },
+    "alias": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alias"
+    },
+    "runnable": {
+      "default": false,
+      "title": "Runnable",
+      "type": "boolean"
+    },
+    "metadata_json": {
+      "additionalProperties": true,
+      "title": "Metadata Json",
+      "type": "object"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "family"
+  ],
+  "title": "ModelCreate",
+  "type": "object",
+  "$id": "https://fogfog2.github.io/project_pipeline/schemas/v1/model.schema.json",
+  "x-vision-lifecycle-schema-version": "1.0"
+}

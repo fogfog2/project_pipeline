@@ -1,0 +1,16 @@
+{
+  "properties": {
+    "manifest": {
+      "additionalProperties": true,
+      "title": "Manifest",
+      "type": "object"
+    }
+  },
+  "required": [
+    "manifest"
+  ],
+  "title": "ResultImportCreate",
+  "type": "object",
+  "$id": "https://fogfog2.github.io/project_pipeline/schemas/v1/result-manifest.schema.json",
+  "x-vision-lifecycle-schema-version": "1.0"
+}

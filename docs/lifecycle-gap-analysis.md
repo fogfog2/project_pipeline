@@ -57,7 +57,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S18 | §15,20: Production부터 원본까지 drill-down | 부분 구현 | Dataset·Model·Run 소유 artifact 노드와 `has_artifact` edge를 lineage API/화면에서 조회 가능. 양자화·Release 증거의 상세 drill-down과 변경 이력은 남아 있다 |
 | S19 | 후속 요구: 처음 사용자 UI만으로 온보딩 | 부분 구현 | 프로젝트/모델/target 입력, 경로 검사 가능. 저장 후 재개 wizard, dataset 등록·확정, Git/storage/runner 편집, 평가 실행·release 폼 미구현. `frontend/src/main.tsx` |
 | S20 | 후속 요구: RTMDet·YOLOX 실제 예제 | 부분 구현·실모델 미검증 | COCO annotation·수기 예측 fixture 및 다운로드 recipe 존재. 예제 이미지/실제 두 모델의 native→ONNX→평가 E2E 없음. MMDetection/MMDeploy 어댑터 존재와 실행 성공은 별개 |
-| S21 | 후속 요구: API/CLI/agent 동일 서비스 | 부분 구현 | CLI는 일부 등록·검사·export만 제공하고 ORM 직접 생성. API Pydantic/참조 검증과 불일치. skill은 안내문이며 formal adapter registry·JSON Schema·contract suite 미완성 |
+| S21 | 후속 요구: API/CLI/agent 동일 서비스 | 부분 구현 | `schemas/v1` JSON Schema와 API/CLI schema registry를 제공하고 agent가 같은 계약을 사용할 수 있다. CLI 등록 경로의 공통 service화·formal adapter registry·전체 contract suite는 남아 있다 |
 | S22 | 후속 요구: Pages 실제 결과 조회 | 부분 구현·정확성 보완 필요 | API/CLI export와 Pages workflow가 생성 시각·overview·artifact hash·평가 상세를 포함하고 경로/중첩 details의 path·command·secret 계열 키를 제거한다. workflow의 실제 선택 프로젝트 입력, 중첩 자유값 전체 allowlist, 정적 화면의 상세 리포트는 추가 필요 |
 | S23 | 후속 요구: 백업·복구·경로 이동 | 부분 구현 | CLI backup/restore가 SQLite integrity와 프로젝트·Storage ID·artifact hash manifest를 함께 검증한다. Alembic 기반 migration과 외부 managed artifact 파일/Storage root 이동 검증은 남아 있다 |
 

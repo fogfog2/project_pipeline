@@ -16,6 +16,10 @@ Use this skill when a user supplies Vision AI files or paths and wants them conn
 5. Validate a small sample before registering a finalized dataset or official evaluation. Keep native training, ONNX export, quantization, and board measurements as distinct runs.
 6. Update the project's setup notes with paths, adapters, environment versions, and known limits.
 
+## Contract-first registration
+
+Use the checked-in `schemas/v1/` contracts (or `GET /api/v1/schemas`) when creating manifests. Validate the JSON before calling the API or CLI, preserve `schema_version`, and keep unknown provenance fields explicit rather than inventing values. `visionops schemas --output contracts.json` writes the same registry for offline agents.
+
 ## MMDetection detection
 
 For RTMDet or YOLOX, preserve the source config, resolved config, checkpoint, MMDetection version, and `metainfo.classes`. Validate those classes against COCO `categories`; category IDs can be non-contiguous and are not model label indices. Use a native runner only in its declared environment.

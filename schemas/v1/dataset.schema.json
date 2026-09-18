@@ -1,0 +1,88 @@
+{
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    },
+    "task_kind": {
+      "default": "detection",
+      "title": "Task Kind",
+      "type": "string"
+    },
+    "format": {
+      "default": "coco",
+      "title": "Format",
+      "type": "string"
+    },
+    "manifest_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Path"
+    },
+    "annotation_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Annotation Path"
+    },
+    "parent_dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Dataset Id"
+    },
+    "sample_count": {
+      "default": 0,
+      "title": "Sample Count",
+      "type": "integer"
+    },
+    "class_names": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Class Names",
+      "type": "array"
+    },
+    "status": {
+      "default": "draft",
+      "title": "Status",
+      "type": "string"
+    },
+    "validation": {
+      "additionalProperties": true,
+      "title": "Validation",
+      "type": "object"
+    }
+  },
+  "required": [
+    "name",
+    "version"
+  ],
+  "title": "DatasetCreate",
+  "type": "object",
+  "$id": "https://fogfog2.github.io/project_pipeline/schemas/v1/dataset.schema.json",
+  "x-vision-lifecycle-schema-version": "1.0"
+}

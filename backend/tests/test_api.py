@@ -425,6 +425,16 @@ def test_evaluation_set_is_persisted_and_must_match_dataset():
         assert invalid.status_code == 422
 
 
+def test_versioned_contract_schemas_are_available_from_api():
+    with TestClient(app) as client:
+        response = client.get("/api/v1/schemas")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["schema_version"] == "1.0"
+        assert {"dataset", "model", "run", "result_manifest", "release"} <= set(body["schemas"])
+        assert "properties" in body["schemas"]["dataset"]
+
+
 def test_split_validation_rejects_duplicate_items_and_group_leakage():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

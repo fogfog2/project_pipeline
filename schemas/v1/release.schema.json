@@ -1,0 +1,62 @@
+{
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "model_id": {
+      "title": "Model Id",
+      "type": "string"
+    },
+    "evaluation_run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evaluation Run Id"
+    },
+    "baseline_model_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Baseline Model Id"
+    },
+    "gate_config": {
+      "additionalProperties": true,
+      "title": "Gate Config",
+      "type": "object"
+    },
+    "notes": {
+      "default": "",
+      "title": "Notes",
+      "type": "string"
+    },
+    "evidence": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Evidence",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name",
+    "model_id"
+  ],
+  "title": "ReleaseCreate",
+  "type": "object",
+  "$id": "https://fogfog2.github.io/project_pipeline/schemas/v1/release.schema.json",
+  "x-vision-lifecycle-schema-version": "1.0"
+}

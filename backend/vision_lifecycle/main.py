@@ -26,6 +26,7 @@ from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion,
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
+from . import schemas as contract_schemas
 from .serializers import as_dict
 from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
 from .artifacts import register_artifact, verify_artifact
@@ -78,6 +79,22 @@ def plugins():
         {"id": "mmdeploy", "kind": "model", "tasks": ["detection"], "capabilities": ["runtime-inference", "target-profile"]},
         {"id": "mock-board", "kind": "runner", "tasks": ["detection", "classification"], "capabilities": ["run", "result-contract"]},
     ]
+
+
+@app.get("/api/v1/schemas")
+def list_contract_schemas():
+    """Return the versioned contracts shared by API, CLI and onboarding agents."""
+    return {
+        "schema_version": "1.0",
+        "schemas": {
+            "project": contract_schemas.ProjectCreate.model_json_schema(),
+            "dataset": contract_schemas.DatasetCreate.model_json_schema(),
+            "model": contract_schemas.ModelCreate.model_json_schema(),
+            "run": contract_schemas.RunCreate.model_json_schema(),
+            "result_manifest": contract_schemas.ResultImportCreate.model_json_schema(),
+            "release": contract_schemas.ReleaseCreate.model_json_schema(),
+        },
+    }
 
 
 @app.get("/api/v1/recipes")

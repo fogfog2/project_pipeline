@@ -1,0 +1,78 @@
+{
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "task_kind": {
+      "default": "detection",
+      "title": "Task Kind",
+      "type": "string"
+    },
+    "storage_root": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Storage Root"
+    },
+    "git_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Git Url"
+    },
+    "default_branch": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Default Branch"
+    },
+    "mode": {
+      "default": "user",
+      "title": "Mode",
+      "type": "string"
+    },
+    "recipe_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Recipe Id"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "ProjectCreate",
+  "type": "object",
+  "$id": "https://fogfog2.github.io/project_pipeline/schemas/v1/project.schema.json",
+  "x-vision-lifecycle-schema-version": "1.0"
+}
