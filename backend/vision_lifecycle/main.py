@@ -252,9 +252,9 @@ def create_dataset(project_id: str, payload: DatasetCreate, session: Session = D
     dataset = DatasetVersion(project_id=project_id, **payload.model_dump(exclude={"validation"}), content_hash=content_hash, validation=validation)
     session.add(dataset); session.flush()
     if payload.annotation_path:
-        register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{payload.name}/{payload.version}/annotation", source_path=payload.annotation_path)
+        register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{payload.name}/{payload.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=payload.annotation_path)
     if payload.manifest_path:
-        register_artifact(session, project_id, kind="dataset-manifest", logical_name=f"{payload.name}/{payload.version}/manifest", source_path=payload.manifest_path)
+        register_artifact(session, project_id, kind="dataset-manifest", logical_name=f"{payload.name}/{payload.version}/manifest", owner_type="dataset", owner_id=dataset.id, source_path=payload.manifest_path)
     session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
@@ -274,9 +274,9 @@ def update_dataset(project_id: str, dataset_id: str, payload: DatasetUpdate, ses
         dataset.content_hash, fingerprints = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
         dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints}
         if "annotation_path" in values and dataset.annotation_path:
-            register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", source_path=dataset.annotation_path)
+            register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=dataset.annotation_path)
         if "manifest_path" in values and dataset.manifest_path:
-            register_artifact(session, project_id, kind="dataset-manifest", logical_name=f"{dataset.name}/{dataset.version}/manifest", source_path=dataset.manifest_path)
+            register_artifact(session, project_id, kind="dataset-manifest", logical_name=f"{dataset.name}/{dataset.version}/manifest", owner_type="dataset", owner_id=dataset.id, source_path=dataset.manifest_path)
     session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
@@ -609,9 +609,9 @@ def create_model(project_id: str, payload: ModelCreate, session: Session = Depen
     model = ModelVersion(project_id=project_id, **values)
     session.add(model); session.flush()
     if values.get("artifact_path"):
-        register_artifact(session, project_id, kind="model", logical_name=f"{values['name']}/{values['version']}/artifact", source_path=values["artifact_path"], sha256=values.get("artifact_sha256"))
+        register_artifact(session, project_id, kind="model", logical_name=f"{values['name']}/{values['version']}/artifact", owner_type="model", owner_id=model.id, source_path=values["artifact_path"], sha256=values.get("artifact_sha256"))
     if values.get("config_path"):
-        register_artifact(session, project_id, kind="config", logical_name=f"{values['name']}/{values['version']}/config", source_path=values["config_path"], sha256=values.get("config_sha256"))
+        register_artifact(session, project_id, kind="config", logical_name=f"{values['name']}/{values['version']}/config", owner_type="model", owner_id=model.id, source_path=values["config_path"], sha256=values.get("config_sha256"))
     session.commit(); session.refresh(model)
     return as_dict(model)
 
@@ -628,11 +628,11 @@ def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: 
     if "artifact_path" in values:
         model.artifact_sha256 = file_sha256(model.artifact_path) if model.artifact_path and Path(model.artifact_path).is_file() else None
         if model.artifact_path:
-            register_artifact(session, project_id, kind="model", logical_name=f"{model.name}/{model.version}/artifact", source_path=model.artifact_path, sha256=model.artifact_sha256)
+            register_artifact(session, project_id, kind="model", logical_name=f"{model.name}/{model.version}/artifact", owner_type="model", owner_id=model.id, source_path=model.artifact_path, sha256=model.artifact_sha256)
     if "config_path" in values:
         model.config_sha256 = file_sha256(model.config_path) if model.config_path and Path(model.config_path).is_file() else None
         if model.config_path:
-            register_artifact(session, project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", source_path=model.config_path, sha256=model.config_sha256)
+            register_artifact(session, project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", owner_type="model", owner_id=model.id, source_path=model.config_path, sha256=model.config_sha256)
     session.commit(); session.refresh(model)
     return as_dict(model)
 
@@ -756,12 +756,6 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
     metric_scope = result.get("metric_scope", "")
     details = {key: value for key, value in result.items() if key != "metric_scope"}
     metrics = {key: value for key, value in details.items() if isinstance(value, (int, float))}
-    prediction_artifact = register_artifact(
-        session, project_id, kind="prediction", logical_name=f"{model.name}/{model.version}/{dataset.name}/{dataset.version}/predictions",
-        source_path=payload.predictions_path, notes=f"{payload.protocol} evaluation input",
-    )
-    session.flush()
-    details["prediction_artifact_id"] = prediction_artifact.id
     run = Run(
         project_id=project_id, kind="evaluation", name=f"{model.family} prediction import", status="completed",
         dataset_id=dataset.id, model_id=model.id,
@@ -769,7 +763,14 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
         metrics=metrics, details=details,
         environment={"source": "external-prediction-json"}, notes="Per-class output retained in evaluation import result.",
     )
-    session.add(run); session.commit(); session.refresh(run)
+    session.add(run); session.flush()
+    prediction_artifact = register_artifact(
+        session, project_id, kind="prediction", logical_name=f"{model.name}/{model.version}/{dataset.name}/{dataset.version}/predictions",
+        owner_type="run", owner_id=run.id, source_path=payload.predictions_path, notes=f"{payload.protocol} evaluation input",
+    )
+    details["prediction_artifact_id"] = prediction_artifact.id
+    run.details = details
+    session.commit(); session.refresh(run)
     return {"run": as_dict(run), "result": {"metric_scope": metric_scope, **details}}
 
 

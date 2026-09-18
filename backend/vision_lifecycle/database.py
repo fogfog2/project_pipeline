@@ -40,6 +40,10 @@ def init_database() -> None:
         for name, declaration in additions.items():
             if name not in run_columns:
                 connection.exec_driver_sql(f"ALTER TABLE runs ADD COLUMN {name} {declaration}")
+        artifact_columns = {column["name"] for column in inspect(engine).get_columns("artifacts")}
+        for name, declaration in {"owner_type": "VARCHAR(40)", "owner_id": "VARCHAR(40)"}.items():
+            if name not in artifact_columns:
+                connection.exec_driver_sql(f"ALTER TABLE artifacts ADD COLUMN {name} {declaration}")
         project_additions = {"mode": "VARCHAR(40) NOT NULL DEFAULT 'user'", "recipe_id": "VARCHAR(120)", "status": "VARCHAR(40) NOT NULL DEFAULT 'active'"}
         for name, declaration in project_additions.items():
             if name not in project_columns:

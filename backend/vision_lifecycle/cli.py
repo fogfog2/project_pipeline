@@ -115,9 +115,9 @@ def main() -> None:
             dataset = DatasetVersion(project_id=args.project_id, **payload)
             session.add(dataset); session.flush()
             if payload.get("annotation_path"):
-                register_artifact(session, args.project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", source_path=payload["annotation_path"])
+                register_artifact(session, args.project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=payload["annotation_path"])
             if payload.get("manifest_path"):
-                register_artifact(session, args.project_id, kind="dataset-manifest", logical_name=f"{dataset.name}/{dataset.version}/manifest", source_path=payload["manifest_path"])
+                register_artifact(session, args.project_id, kind="dataset-manifest", logical_name=f"{dataset.name}/{dataset.version}/manifest", owner_type="dataset", owner_id=dataset.id, source_path=payload["manifest_path"])
             session.commit(); session.refresh(dataset); _json(as_dict(dataset))
         elif args.command == "create-model":
             if not session.get(Project, args.project_id):
@@ -128,9 +128,9 @@ def main() -> None:
             model = ModelVersion(project_id=args.project_id, **payload)
             session.add(model); session.flush()
             if payload.get("artifact_path"):
-                register_artifact(session, args.project_id, kind="model", logical_name=f"{model.name}/{model.version}/artifact", source_path=payload["artifact_path"], sha256=payload["artifact_sha256"])
+                register_artifact(session, args.project_id, kind="model", logical_name=f"{model.name}/{model.version}/artifact", owner_type="model", owner_id=model.id, source_path=payload["artifact_path"], sha256=payload["artifact_sha256"])
             if payload.get("config_path"):
-                register_artifact(session, args.project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", source_path=payload["config_path"], sha256=payload["config_sha256"])
+                register_artifact(session, args.project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", owner_type="model", owner_id=model.id, source_path=payload["config_path"], sha256=payload["config_sha256"])
             session.commit(); session.refresh(model); _json(as_dict(model))
         elif args.command == "register-artifact":
             if not session.get(Project, args.project_id):

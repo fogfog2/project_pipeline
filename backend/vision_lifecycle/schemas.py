@@ -121,6 +121,8 @@ class StepProgressUpdate(BaseModel):
 class ArtifactCreate(BaseModel):
     kind: str = "file"
     logical_name: str
+    owner_type: str | None = None
+    owner_id: str | None = None
     source_path: str | None = None
     sha256: str | None = None
     notes: str = ""

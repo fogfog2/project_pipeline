@@ -43,6 +43,8 @@ def test_demo_api_validates_evaluates_and_redacts():
         graph = client.get(f"/api/v1/projects/{project_id}/lineage")
         assert graph.status_code == 200
         assert any(edge["relation"] == "trained_from" for edge in graph.json()["edges"])
+        assert any(node["kind"] == "artifact" for node in graph.json()["nodes"])
+        assert any(edge["relation"] == "has_artifact" for edge in graph.json()["edges"])
 
 
 def test_mock_board_job_completes():
