@@ -37,6 +37,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - Dataset·Model·Run·Quantization·Board·Release를 연결하는 lineage API와 리포트 화면
 - recipe별 onboarding session/step progress와 evidence 저장·재개
 - 온보딩 화면에 단계별 readiness와 막힌 이유를 표시하고, 준비되지 않은 단계의 완료 처리를 차단
+- 온보딩 각 단계에서 연결·데이터·모델·평가 화면으로 바로 이동한 뒤 가이드로 돌아오는 흐름
 - 실제 Storage/Dataset/Model/Run/Release 근거가 없으면 onboarding 완료 처리를 거부
 - 대용량 Storage inventory를 별도 Job으로 실행하고 로그·취소·재시도 흐름으로 관리
 - classification prediction records 평가 UI와 detection COCO 평가 UI
