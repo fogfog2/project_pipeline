@@ -15,6 +15,19 @@ _processes: dict[str, subprocess.Popen[str]] = {}
 _lock = threading.Lock()
 
 
+def recover_interrupted() -> int:
+    """Mark active jobs from a previous service process as interrupted."""
+    changed = 0
+    with SessionLocal() as session:
+        jobs = session.query(Job).filter(Job.status.in_(["queued", "running", "cancelling"])).all()
+        for job in jobs:
+            job.status = "interrupted"
+            job.log = f"{job.log}Service restarted; manual retry is required.\n"
+            changed += 1
+        session.commit()
+    return changed
+
+
 def _append_log(job_id: str, message: str, *, status: str | None = None, result: dict[str, Any] | None = None) -> None:
     with SessionLocal() as session:
         job = session.get(Job, job_id)

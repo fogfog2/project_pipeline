@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 
 from vision_lifecycle.database import Base, engine
 from vision_lifecycle.main import app
+from vision_lifecycle.models import Job
+from vision_lifecycle.runner import recover_interrupted
 
 
 def test_demo_api_validates_evaluates_and_redacts():
@@ -55,6 +57,22 @@ def test_mock_board_job_completes():
                 break
             sleep(0.01)
         assert status == "completed"
+
+
+def test_restart_marks_active_jobs_interrupted():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "restart-project"}).json()["id"]
+        job = client.post(f"/api/v1/projects/{project_id}/jobs", json={"runner_id": "mock-board"}).json()
+        from vision_lifecycle.database import SessionLocal
+        with SessionLocal() as session:
+            item = session.get(Job, job["id"])
+            item.status = "running"
+            session.commit()
+        assert recover_interrupted() == 1
+        current = next(item for item in client.get(f"/api/v1/projects/{project_id}/jobs").json() if item["id"] == job["id"])
+        assert current["status"] == "interrupted"
 
 
 def test_result_import_is_idempotent_and_detects_conflict():

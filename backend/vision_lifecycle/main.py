@@ -22,7 +22,7 @@ from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mm
 from .importer import manifest_hash, validate_result_manifest
 from .models import CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, Release, Run, RunnerProfile, SplitVersion, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
-from .runner import cancel, launch
+from .runner import cancel, launch, recover_interrupted
 from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, overview, safe_export, seed_demo
@@ -33,6 +33,7 @@ from .storage import browse as browse_storage, inventory as inventory_storage, s
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_database()
+    recover_interrupted()
     yield
 
 
