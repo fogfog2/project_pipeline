@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import hashlib
+import json
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -18,10 +20,10 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import DataAsset, DatasetVersion, Job, ModelVersion, Project, Release, Run, RunnerProfile, StorageMapping, TargetProfile
+from .models import CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, Release, Run, RunnerProfile, SplitVersion, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch
-from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, TargetProfileCreate
+from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, overview, safe_export, seed_demo
 from .fingerprints import dataset_fingerprint, file_sha256
@@ -294,6 +296,75 @@ def inventory_storage_mapping(project_id: str, storage_id: str, payload: Storage
             assets.append(asset)
     session.commit()
     return {"count": len(assets), "truncated": len(assets) >= payload.limit, "assets": [as_dict(item) for item in assets]}
+
+
+def _version_hash(value: dict) -> str:
+    return "sha256:" + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _version_dataset(session: Session, project_id: str, dataset_id: str | None):
+    if not dataset_id:
+        return None
+    dataset = session.get(DatasetVersion, dataset_id)
+    if not dataset or dataset.project_id != project_id:
+        raise HTTPException(422, "Dataset reference must belong to this project")
+    return dataset
+
+
+@app.get("/api/v1/projects/{project_id}/label-schemas")
+def list_label_schemas(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(LabelSchemaVersion).where(LabelSchemaVersion.project_id == project_id).order_by(LabelSchemaVersion.created_at.desc())).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/label-schemas", status_code=201)
+def create_label_schema(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
+    value = {"name": payload.name, "version": payload.version, "classes": payload.classes, "mapping": payload.mapping, "dataset_id": payload.dataset_id}
+    item = LabelSchemaVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, classes=payload.classes, mapping=payload.mapping, status=payload.status, content_hash=_version_hash(value))
+    session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.get("/api/v1/projects/{project_id}/splits")
+def list_splits(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(SplitVersion).where(SplitVersion.project_id == project_id).order_by(SplitVersion.created_at.desc())).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/splits", status_code=201)
+def create_split(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
+    value = {"name": payload.name, "version": payload.version, "definition": payload.definition, "dataset_id": payload.dataset_id}
+    item = SplitVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, definition=payload.definition, status=payload.status, content_hash=_version_hash(value))
+    session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.get("/api/v1/projects/{project_id}/evaluation-sets")
+def list_evaluation_sets(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(EvaluationSetVersion).where(EvaluationSetVersion.project_id == project_id).order_by(EvaluationSetVersion.created_at.desc())).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/evaluation-sets", status_code=201)
+def create_evaluation_set(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
+    value = {"name": payload.name, "version": payload.version, "purpose": payload.purpose, "definition": payload.definition, "dataset_id": payload.dataset_id}
+    item = EvaluationSetVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, purpose=payload.purpose, definition=payload.definition, status=payload.status, content_hash=_version_hash(value))
+    session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.get("/api/v1/projects/{project_id}/calibration-sets")
+def list_calibration_sets(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(CalibrationSetVersion).where(CalibrationSetVersion.project_id == project_id).order_by(CalibrationSetVersion.created_at.desc())).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/calibration-sets", status_code=201)
+def create_calibration_set(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
+    value = {"name": payload.name, "version": payload.version, "sampling": payload.sampling, "preprocessing": payload.preprocessing, "dataset_id": payload.dataset_id}
+    item = CalibrationSetVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, sampling=payload.sampling, preprocessing=payload.preprocessing, status=payload.status, content_hash=_version_hash(value))
+    session.add(item); session.commit(); session.refresh(item); return as_dict(item)
 
 
 @app.get("/api/v1/projects/{project_id}/models")

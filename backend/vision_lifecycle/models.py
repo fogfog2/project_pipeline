@@ -75,6 +75,57 @@ class DataAsset(Base, Timestamped):
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class LabelSchemaVersion(Base, Timestamped):
+    __tablename__ = "label_schema_versions"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("LABEL"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    version: Mapped[str] = mapped_column(String(100))
+    classes: Mapped[list] = mapped_column(JSON, default=list)
+    mapping: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(40), default="draft")
+    content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class SplitVersion(Base, Timestamped):
+    __tablename__ = "split_versions"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("SPLIT"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    version: Mapped[str] = mapped_column(String(100))
+    definition: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(40), default="draft")
+    content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class EvaluationSetVersion(Base, Timestamped):
+    __tablename__ = "evaluation_set_versions"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("EVALSET"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    version: Mapped[str] = mapped_column(String(100))
+    purpose: Mapped[str] = mapped_column(String(80), default="core")
+    definition: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(40), default="draft")
+    content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class CalibrationSetVersion(Base, Timestamped):
+    __tablename__ = "calibration_set_versions"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("CAL"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    version: Mapped[str] = mapped_column(String(100))
+    sampling: Mapped[dict] = mapped_column(JSON, default=dict)
+    preprocessing: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(40), default="draft")
+    content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
 class ModelVersion(Base, Timestamped):
     __tablename__ = "model_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("MODEL"))

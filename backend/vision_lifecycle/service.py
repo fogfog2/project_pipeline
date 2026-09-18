@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import DataAsset, DatasetVersion, Job, ModelVersion, Project, Release, Run, StorageMapping, TargetProfile
+from .models import CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, Release, Run, SplitVersion, StorageMapping, TargetProfile
 
 
 def overview(session: Session, project_id: str) -> dict:
@@ -145,6 +145,10 @@ def safe_export(session: Session, project_id: str) -> dict:
         "runs": [safe(x) for x in session.scalars(select(Run).where(Run.project_id == project_id)).all()],
         "storages": [safe(x) for x in session.scalars(select(StorageMapping).where(StorageMapping.project_id == project_id)).all()],
         "assets": [safe(x) for x in session.scalars(select(DataAsset).where(DataAsset.project_id == project_id)).all()],
+        "label_schemas": [safe(x) for x in session.scalars(select(LabelSchemaVersion).where(LabelSchemaVersion.project_id == project_id)).all()],
+        "splits": [safe(x) for x in session.scalars(select(SplitVersion).where(SplitVersion.project_id == project_id)).all()],
+        "evaluation_sets": [safe(x) for x in session.scalars(select(EvaluationSetVersion).where(EvaluationSetVersion.project_id == project_id)).all()],
+        "calibration_sets": [safe(x) for x in session.scalars(select(CalibrationSetVersion).where(CalibrationSetVersion.project_id == project_id)).all()],
         "targets": [safe(x) for x in session.scalars(select(TargetProfile).where(TargetProfile.project_id == project_id)).all()],
         "releases": [safe(x) for x in session.scalars(select(Release).where(Release.project_id == project_id)).all()],
         "redactions": ["storage_root", "root_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"],

@@ -64,6 +64,19 @@ class StorageInventoryRequest(BaseModel):
     limit: int = Field(default=1000, ge=1, le=10_000)
 
 
+class VersionDefinitionCreate(BaseModel):
+    name: str
+    version: str
+    dataset_id: str | None = None
+    classes: list[dict[str, Any]] = Field(default_factory=list)
+    mapping: dict[str, Any] = Field(default_factory=dict)
+    definition: dict[str, Any] = Field(default_factory=dict)
+    purpose: str = "core"
+    sampling: dict[str, Any] = Field(default_factory=dict)
+    preprocessing: dict[str, Any] = Field(default_factory=dict)
+    status: str = "draft"
+
+
 class ModelUpdate(BaseModel):
     name: str | None = None
     alias: str | None = None

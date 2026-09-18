@@ -34,6 +34,11 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         assert client.get(f"/api/v1/projects/{project_id}/assets").json()[0]["sha256"]
         dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "coco", "version": "v1", "annotation_path": str(annotation)}).json()
         assert dataset["content_hash"].startswith("sha256:")
+        label = client.post(f"/api/v1/projects/{project_id}/label-schemas", json={"name": "coco-labels", "version": "v1", "dataset_id": dataset["id"], "classes": [{"id": 1, "name": "person"}]}).json()
+        split = client.post(f"/api/v1/projects/{project_id}/splits", json={"name": "default", "version": "v1", "dataset_id": dataset["id"], "definition": {"train": 0.8, "val": 0.2, "seed": 42}}).json()
+        eval_set = client.post(f"/api/v1/projects/{project_id}/evaluation-sets", json={"name": "core", "version": "v1", "dataset_id": dataset["id"], "purpose": "core", "definition": {"items": [1]}}).json()
+        calibration = client.post(f"/api/v1/projects/{project_id}/calibration-sets", json={"name": "representative", "version": "v1", "dataset_id": dataset["id"], "sampling": {"count": 1}, "preprocessing": {"color": "rgb"}}).json()
+        assert all(item["content_hash"].startswith("sha256:") for item in (label, split, eval_set, calibration))
         finalized = client.post(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/finalize")
         assert finalized.status_code == 200
         assert finalized.json()["status"] == "finalized"
