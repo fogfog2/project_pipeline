@@ -22,6 +22,19 @@ def test_storage_browse_stays_within_configured_root(tmp_path: Path):
         resolve_within(str(root), "../outside")
 
 
+def test_storage_mapping_archive_is_reversible_and_blocks_operations(tmp_path: Path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "storage-archive"}).json()["id"]
+        mapping = client.post(f"/api/v1/projects/{project_id}/storages", json={"name": "workspace", "root_path": str(tmp_path)}).json()
+        archived = client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/archive")
+        assert archived.status_code == 200 and archived.json()["status"] == "archived"
+        assert client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/browse", json={}).status_code == 409
+        restored = client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/archive")
+        assert restored.status_code == 200 and restored.json()["status"] == "available"
+
+
 def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

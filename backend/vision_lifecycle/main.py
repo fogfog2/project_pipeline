@@ -417,12 +417,30 @@ def validate_storage(project_id: str, storage_id: str, session: Session = Depend
     return as_dict(mapping)
 
 
+@app.post("/api/v1/projects/{project_id}/storages/{storage_id}/archive")
+def archive_storage(project_id: str, storage_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    mapping = session.get(StorageMapping, storage_id)
+    if not mapping or mapping.project_id != project_id:
+        raise HTTPException(404, "Storage mapping not found")
+    if mapping.status == "archived":
+        validation = storage_status(mapping.root_path)
+        mapping.status = validation["status"]
+        mapping.last_validation = validation
+    else:
+        mapping.status = "archived"
+    session.commit(); session.refresh(mapping)
+    return as_dict(mapping)
+
+
 @app.post("/api/v1/projects/{project_id}/storages/{storage_id}/browse")
 def browse_storage_mapping(project_id: str, storage_id: str, payload: StorageBrowseRequest, session: Session = Depends(get_session)):
     require_project(session, project_id)
     mapping = session.get(StorageMapping, storage_id)
     if not mapping or mapping.project_id != project_id:
         raise HTTPException(404, "Storage mapping not found")
+    if mapping.status == "archived":
+        raise HTTPException(409, "Storage mapping is archived; restore it before browsing")
     try:
         return browse_storage(mapping.root_path, payload.relative_path, payload.limit)
     except (OSError, ValueError) as error:
@@ -441,6 +459,8 @@ def inventory_storage_mapping(project_id: str, storage_id: str, payload: Storage
     mapping = session.get(StorageMapping, storage_id)
     if not mapping or mapping.project_id != project_id:
         raise HTTPException(404, "Storage mapping not found")
+    if mapping.status == "archived":
+        raise HTTPException(409, "Storage mapping is archived; restore it before inventory")
     try:
         entries = inventory_storage(mapping.root_path, payload.relative_path, payload.recursive, payload.limit)
     except (OSError, ValueError) as error:
@@ -468,6 +488,8 @@ def create_inventory_job(project_id: str, storage_id: str, payload: StorageInven
     mapping = session.get(StorageMapping, storage_id)
     if not mapping or mapping.project_id != project_id:
         raise HTTPException(404, "Storage mapping not found")
+    if mapping.status == "archived":
+        raise HTTPException(409, "Storage mapping is archived; restore it before starting inventory")
     job = Job(project_id=project_id, runner_id="builtin:storage-inventory", command=["builtin:storage-inventory"], input_json={"storage_id": storage_id, "relative_path": payload.relative_path, "recursive": payload.recursive, "limit": payload.limit}, status="queued")
     session.add(job); session.commit(); session.refresh(job)
     if os.environ.get("VISION_LIFECYCLE_EXTERNAL_WORKER", "false").lower() != "true":
