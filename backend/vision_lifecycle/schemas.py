@@ -58,6 +58,12 @@ class StorageBrowseRequest(BaseModel):
     limit: int = Field(default=200, ge=1, le=500)
 
 
+class StorageInventoryRequest(BaseModel):
+    relative_path: str = ""
+    recursive: bool = True
+    limit: int = Field(default=1000, ge=1, le=10_000)
+
+
 class ModelUpdate(BaseModel):
     name: str | None = None
     alias: str | None = None

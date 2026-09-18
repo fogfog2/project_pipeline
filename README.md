@@ -7,7 +7,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 ## 제공 기능
 
 - SQLite 기반 Project, DatasetVersion, ModelVersion, Run, Job registry
-- 읽기 전용 Storage mapping 등록·재검사·root 내부 탐색과 annotation/manifest fingerprint 변경 감지
+- 읽기 전용 Storage mapping 등록·재검사·root 내부 탐색, bounded file inventory와 annotation/manifest fingerprint 변경 감지
 - COCO annotation validation과 external prediction JSON의 onboarding AP50 또는 공식 COCO AP@[.50:.95] 평가
 - 분류 prediction record 기반 Top-1/Top-K·macro F1·confusion matrix 평가
 - COCO·YOLO TXT·classification folder/CSV 경로 검사

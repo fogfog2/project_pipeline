@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from .fingerprints import file_sha256
+
 
 def storage_status(root_path: str) -> dict:
     root = Path(root_path).expanduser()
@@ -49,3 +51,24 @@ def browse(root_path: str, relative_path: str = "", limit: int = 200) -> dict:
             "size_bytes": child.stat().st_size if child.is_file() else None,
         })
     return {"relative_path": str(target.relative_to(root)), "entries": entries, "truncated": len(list(target.iterdir())) > limit}
+
+
+def inventory(root_path: str, relative_path: str = "", recursive: bool = True, limit: int = 1000) -> list[dict]:
+    target = resolve_within(root_path, relative_path)
+    if not target.exists() or not target.is_dir():
+        raise ValueError("Inventory path is not an existing directory")
+    root = Path(root_path).expanduser().resolve(strict=True)
+    iterator = target.rglob("*") if recursive else target.iterdir()
+    result: list[dict] = []
+    for child in sorted(iterator, key=lambda item: str(item).lower()):
+        if len(result) >= limit:
+            break
+        if not child.is_file():
+            continue
+        resolved = child.resolve(strict=True)
+        try:
+            relative = resolved.relative_to(root)
+        except ValueError:
+            continue
+        result.append({"relative_path": str(relative), "kind": "file", "size_bytes": resolved.stat().st_size, "sha256": file_sha256(resolved), "suffix": resolved.suffix.lower()})
+    return result

@@ -61,6 +61,20 @@ class StorageMapping(Base, Timestamped):
     notes: Mapped[str] = mapped_column(Text, default="")
 
 
+class DataAsset(Base, Timestamped):
+    """Discovered file using a storage id and portable relative path."""
+    __tablename__ = "data_assets"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ASSET"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    storage_id: Mapped[str] = mapped_column(ForeignKey("storage_mappings.id"), index=True)
+    relative_path: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(40), default="file")
+    size_bytes: Mapped[int] = mapped_column(default=0)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="discovered")
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 class ModelVersion(Base, Timestamped):
     __tablename__ = "model_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("MODEL"))

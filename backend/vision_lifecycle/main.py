@@ -18,14 +18,14 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import DatasetVersion, Job, ModelVersion, Project, Release, Run, RunnerProfile, StorageMapping, TargetProfile
+from .models import DataAsset, DatasetVersion, Job, ModelVersion, Project, Release, Run, RunnerProfile, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch
-from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageMappingCreate, TargetProfileCreate
+from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, TargetProfileCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, overview, safe_export, seed_demo
 from .fingerprints import dataset_fingerprint
-from .storage import browse as browse_storage, storage_status
+from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 
 
 @asynccontextmanager
@@ -261,6 +261,39 @@ def browse_storage_mapping(project_id: str, storage_id: str, payload: StorageBro
         return browse_storage(mapping.root_path, payload.relative_path, payload.limit)
     except (OSError, ValueError) as error:
         raise HTTPException(422, str(error)) from error
+
+
+@app.get("/api/v1/projects/{project_id}/assets")
+def list_assets(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(DataAsset).where(DataAsset.project_id == project_id).order_by(DataAsset.relative_path)).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/storages/{storage_id}/inventory")
+def inventory_storage_mapping(project_id: str, storage_id: str, payload: StorageInventoryRequest, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    mapping = session.get(StorageMapping, storage_id)
+    if not mapping or mapping.project_id != project_id:
+        raise HTTPException(404, "Storage mapping not found")
+    try:
+        entries = inventory_storage(mapping.root_path, payload.relative_path, payload.recursive, payload.limit)
+    except (OSError, ValueError) as error:
+        raise HTTPException(422, str(error)) from error
+    assets = []
+    for entry in entries:
+        existing = session.scalar(select(DataAsset).where(DataAsset.project_id == project_id, DataAsset.storage_id == storage_id, DataAsset.relative_path == entry["relative_path"]))
+        if existing:
+            existing.size_bytes = entry["size_bytes"]
+            existing.sha256 = entry["sha256"]
+            existing.metadata_json = {"suffix": entry["suffix"]}
+            existing.status = "discovered"
+            assets.append(existing)
+        else:
+            asset = DataAsset(project_id=project_id, storage_id=storage_id, relative_path=entry["relative_path"], size_bytes=entry["size_bytes"], sha256=entry["sha256"], metadata_json={"suffix": entry["suffix"]})
+            session.add(asset)
+            assets.append(asset)
+    session.commit()
+    return {"count": len(assets), "truncated": len(assets) >= payload.limit, "assets": [as_dict(item) for item in assets]}
 
 
 @app.get("/api/v1/projects/{project_id}/models")
