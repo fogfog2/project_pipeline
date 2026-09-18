@@ -59,6 +59,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - FastAPI `/api/v1`와 `visionops` CLI
 - `schemas/v1` JSON Schema, API `GET /api/v1/schemas`, CLI `visionops schemas`로 API/CLI/agent 계약 공유
 - React/Vite 한국어 UI 골격
+- `#/projects/:id/:page` hash routing으로 새로고침·뒤로가기·Pages 하위 경로 복원
 - MMDetection fixture와 RTMDet·YOLOX 온보딩 문서
 - 결과 export API와 GitHub Pages용 정적 snapshot 경로(생성 시각·overview·artifact hash·평가 상세 포함, 원본 경로 제외)
 - 기존 자료를 연결하는 `vision-lifecycle-onboard` agent skill

@@ -62,9 +62,19 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
 }
 
+const ROUTE_PAGES = ["개요", "데이터", "실험", "모델", "평가·비교", "실행·보드", "Release·리포트", "연결·설정", "감사 로그", "가이드"];
+function readRoute() {
+  const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map((part) => decodeURIComponent(part));
+  const projectIndex = parts.indexOf("projects");
+  const projectId = projectIndex >= 0 ? parts[projectIndex + 1] : undefined;
+  const requestedPage = projectIndex >= 0 ? parts[projectIndex + 2] : undefined;
+  return { projectId, page: requestedPage && ROUTE_PAGES.includes(requestedPage) ? requestedPage : "개요" };
+}
+
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [projectId, setProjectId] = useState<string>();
+  const initialRoute = readRoute();
+  const [projectId, setProjectId] = useState<string | undefined>(initialRoute.projectId);
   const [overview, setOverview] = useState<Overview>();
   const [models, setModels] = useState<Model[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -78,22 +88,42 @@ function App() {
   const [boardBenchmarks, setBoardBenchmarks] = useState<BoardBenchmark[]>([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
-  const [page, setPage] = useState("개요");
+  const [page, setPage] = useState(initialRoute.page);
   const [message, setMessage] = useState("빈 프로젝트를 만들고 가이드에 따라 Storage, Dataset, Model, Evaluation을 연결하세요.");
 
   const selected = useMemo(() => projects.find((project) => project.id === projectId), [projects, projectId]);
+  const navigate = (nextPage: string = page, nextProjectId: string | undefined = projectId) => {
+    const hash = nextProjectId ? `#/projects/${encodeURIComponent(nextProjectId)}/${encodeURIComponent(nextPage)}` : "#/";
+    if (window.location.hash !== hash) window.location.hash = hash;
+    setPage(nextPage); setProjectId(nextProjectId);
+  };
   const loadProject = async (id: string) => {
     const [nextOverview, nextModels, nextRuns, nextDatasets, nextJobs, nextTargets, nextStorages, nextReleases, labelSchemas, splits, evaluationSets, calibrationSets, nextQuantizationRuns, nextBoardBenchmarks, nextArtifacts, nextAuditEvents] = await Promise.all([
       api<Overview>(`/projects/${id}/overview`), api<Model[]>(`/projects/${id}/models`), api<Run[]>(`/projects/${id}/runs`), api<Dataset[]>(`/projects/${id}/datasets`), api<Job[]>(`/projects/${id}/jobs`), api<Target[]>(`/projects/${id}/targets`), api<StorageMapping[]>(`/projects/${id}/storages`), api<Release[]>(`/projects/${id}/releases`), api<VersionRecord[]>(`/projects/${id}/label-schemas`), api<VersionRecord[]>(`/projects/${id}/splits`), api<VersionRecord[]>(`/projects/${id}/evaluation-sets`), api<VersionRecord[]>(`/projects/${id}/calibration-sets`), api<QuantizationRun[]>(`/projects/${id}/quantization-runs`), api<BoardBenchmark[]>(`/projects/${id}/board-benchmarks`), api<Artifact[]>(`/projects/${id}/artifacts`), api<AuditEvent[]>(`/projects/${id}/audit-events`)
     ]);
     setProjectId(id); setOverview(nextOverview); setModels(nextModels); setRuns(nextRuns); setDatasets(nextDatasets); setJobs(nextJobs); setTargets(nextTargets); setStorages(nextStorages); setReleases(nextReleases); setVersions([...labelSchemas.map((item) => ({ ...item, kind: "label" })), ...splits.map((item) => ({ ...item, kind: "split" })), ...evaluationSets.map((item) => ({ ...item, kind: "evaluation" })), ...calibrationSets.map((item) => ({ ...item, kind: "calibration" }))]); setQuantizationRuns(nextQuantizationRuns); setBoardBenchmarks(nextBoardBenchmarks); setArtifacts(nextArtifacts); setAuditEvents(nextAuditEvents);
+    const hash = `#/projects/${encodeURIComponent(id)}/${encodeURIComponent(page)}`;
+    if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
   };
   const loadProjects = async () => {
     const value = await api<Project[]>("/projects");
     setProjects(value);
-    if (value.length && !projectId) await loadProject(value[0].id);
+    if (value.length) {
+      const requested = projectId && value.some((project) => project.id === projectId) ? projectId : value[0].id;
+      await loadProject(requested);
+    }
   };
   useEffect(() => { void loadProjects().catch((error) => setMessage(`API 연결 오류: ${error.message}`)); }, []);
+  useEffect(() => {
+    const onRouteChange = () => {
+      const next = readRoute();
+      setPage(next.page);
+      if (!next.projectId) { setProjectId(undefined); return; }
+      if (next.projectId !== projectId) void loadProject(next.projectId).catch((error) => setMessage(`프로젝트 경로를 열 수 없습니다: ${error.message}`));
+    };
+    window.addEventListener("hashchange", onRouteChange);
+    return () => window.removeEventListener("hashchange", onRouteChange);
+  }, [projectId]);
   const createRecipeProject = async () => {
     try {
       const project = await api<Project>("/projects", { method: "POST", body: JSON.stringify({
@@ -118,7 +148,7 @@ function App() {
       method: "POST", body: JSON.stringify({ baseline_model_id: overview.baseline.id, candidate_model_id: overview.candidate.id })
     });
     setMessage(value.compatible ? `비교 완료: ${Object.entries(value.delta).map(([key, delta]) => `${key} ${delta > 0 ? "+" : ""}${delta}`).join(", ")}` : value.reason || "비교할 수 없습니다.");
-    setPage("평가·비교");
+    navigate("평가·비교");
   };
   const runMockBoard = async () => {
     if (!projectId) return;
@@ -160,12 +190,12 @@ function App() {
     } catch (error) { setMessage(`Dataset 확정 오류: ${String(error)}`); }
   };
 
-  const nav = ["개요", "데이터", "실험", "모델", "평가·비교", "실행·보드", "Release·리포트", "연결·설정", "감사 로그", "가이드"];
+  const nav = ROUTE_PAGES;
   return <div className="shell">
     <aside><div className="brand">VISION<br/><b>LIFECYCLE</b></div><button className="demo" disabled={isStatic} onClick={() => void createRecipeProject()}>실습 프로젝트 시작</button>
-      <nav>{nav.map((item) => <button className={page === item ? "active" : ""} onClick={() => setPage(item)} key={item}>{item}</button>)}</nav>
+      <nav>{nav.map((item) => <button className={page === item ? "active" : ""} onClick={() => navigate(item)} key={item}>{item}</button>)}</nav>
       <small>Local mode · API v1</small></aside>
-    <main><header><div><p className="eyebrow">PROJECT / {selected?.task_kind || "SETUP"}</p><h1>{selected?.name || "Vision AI Lifecycle"}</h1>{selected && <small className="muted">{selected.mode === "guided" ? "Guided practice · 자료와 결과를 단계별로 연결" : "User project · 직접 연결"}</small>}</div><div className="header-actions"><button className="secondary" disabled={isStatic} onClick={() => setProjectId(undefined)}>새 프로젝트</button><select aria-label="프로젝트 선택" value={projectId || ""} onChange={(event) => void loadProject(event.target.value)}><option value="">프로젝트 선택</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></div></header>
+    <main><header><div><p className="eyebrow">PROJECT / {selected?.task_kind || "SETUP"}</p><h1>{selected?.name || "Vision AI Lifecycle"}</h1>{selected && <small className="muted">{selected.mode === "guided" ? "Guided practice · 자료와 결과를 단계별로 연결" : "User project · 직접 연결"}</small>}</div><div className="header-actions"><button className="secondary" disabled={isStatic} onClick={() => navigate("개요", undefined)}>새 프로젝트</button><select aria-label="프로젝트 선택" value={projectId || ""} onChange={(event) => event.target.value ? void loadProject(event.target.value) : navigate("개요", undefined)}><option value="">프로젝트 선택</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></div></header>
       <p className="notice">{message}</p>
       {!projectId ? <ProjectStarter onCreated={(name, task) => void createBlankProject(name, task)} onRecipe={() => void createRecipeProject()} onError={setMessage}/> : <>
       {page === "개요" && <><section className="cards"><Metric label="Dataset versions" value={overview?.counts.datasets ?? 0}/><Metric label="Model versions" value={overview?.counts.models ?? 0}/><Metric label="Evaluation runs" value={overview?.counts.runs ?? 0}/><Metric label="Lineage completeness" value={`${overview?.lineage_completeness ?? 0}%`}/></section>
