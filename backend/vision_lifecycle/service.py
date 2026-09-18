@@ -152,6 +152,7 @@ def lineage(session: Session, project_id: str) -> dict:
     if not project:
         raise LookupError("Project not found")
     datasets = session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()
+    label_schemas = session.scalars(select(LabelSchemaVersion).where(LabelSchemaVersion.project_id == project_id)).all()
     models = session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()
     runs = session.scalars(select(Run).where(Run.project_id == project_id)).all()
     quants = session.scalars(select(QuantizationRun).where(QuantizationRun.project_id == project_id)).all()
@@ -164,6 +165,7 @@ def lineage(session: Session, project_id: str) -> dict:
     targets = session.scalars(select(TargetProfile).where(TargetProfile.project_id == project_id)).all()
     nodes = [{"id": project.id, "kind": "project", "label": project.name}]
     nodes += [{"id": item.id, "kind": "dataset", "label": f"{item.name} {item.version}", "status": item.status} for item in datasets]
+    nodes += [{"id": item.id, "kind": "label-schema", "label": f"{item.name} {item.version}", "status": item.status} for item in label_schemas]
     nodes += [{"id": item.id, "kind": "model", "label": f"{item.family} {item.version}", "status": item.status} for item in models]
     nodes += [{"id": item.id, "kind": "run", "label": item.name, "status": item.status} for item in runs]
     nodes += [{"id": item.id, "kind": "quantization", "label": item.name, "status": item.status} for item in quants]
@@ -176,6 +178,12 @@ def lineage(session: Session, project_id: str) -> dict:
     edges = []
     for dataset in datasets:
         edges.append({"source": project.id, "target": dataset.id, "relation": "contains"})
+    for label_schema in label_schemas:
+        edges.append({"source": project.id, "target": label_schema.id, "relation": "contains"})
+        if label_schema.dataset_id:
+            edges.append({"source": label_schema.dataset_id, "target": label_schema.id, "relation": "defines_labels"})
+        if label_schema.parent_label_schema_id:
+            edges.append({"source": label_schema.parent_label_schema_id, "target": label_schema.id, "relation": "supersedes"})
     for model in models:
         edges.append({"source": project.id, "target": model.id, "relation": "contains"})
         if model.source_dataset_id:

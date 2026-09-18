@@ -288,6 +288,24 @@ def test_training_run_typed_provenance_is_normalized_and_references_are_checked(
         assert mismatched.status_code == 422
 
 
+def test_label_schema_parent_history_and_lineage_are_preserved():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "label-history"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "labels", "version": "v1"}).json()
+        base = client.post(f"/api/v1/projects/{project_id}/label-schemas", json={
+            "name": "labels", "version": "v1", "dataset_id": dataset["id"], "classes": [{"id": 1, "name": "person"}], "mapping": {"person": 1},
+        }).json()
+        child = client.post(f"/api/v1/projects/{project_id}/label-schemas", json={
+            "name": "labels", "version": "v2", "dataset_id": dataset["id"], "parent_label_schema_id": base["id"], "classes": [{"id": 1, "name": "pedestrian"}, {"id": 2, "name": "cyclist"}], "mapping": {"pedestrian": 1, "cyclist": 2},
+        })
+        assert child.status_code == 201, child.text
+        assert child.json()["parent_label_schema_id"] == base["id"]
+        graph = client.get(f"/api/v1/projects/{project_id}/lineage").json()
+        assert any(edge["relation"] == "supersedes" and edge["source"] == base["id"] and edge["target"] == child.json()["id"] for edge in graph["edges"])
+
+
 def test_release_requires_compatible_baseline_for_regression_gate():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

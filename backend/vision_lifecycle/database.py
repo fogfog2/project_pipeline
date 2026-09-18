@@ -56,6 +56,9 @@ def init_database() -> None:
         for name, declaration in {"parent_dataset_id": "VARCHAR(40)", "snapshot": "JSON NOT NULL DEFAULT '{}'"}.items():
             if name not in dataset_columns:
                 connection.exec_driver_sql(f"ALTER TABLE dataset_versions ADD COLUMN {name} {declaration}")
+        label_columns = {column["name"] for column in inspect(engine).get_columns("label_schema_versions")}
+        if "parent_label_schema_id" not in label_columns:
+            connection.exec_driver_sql("ALTER TABLE label_schema_versions ADD COLUMN parent_label_schema_id VARCHAR(40)")
         split_columns = {column["name"] for column in inspect(engine).get_columns("split_versions")}
         if "validation" not in split_columns:
             connection.exec_driver_sql("ALTER TABLE split_versions ADD COLUMN validation JSON NOT NULL DEFAULT '{}'")

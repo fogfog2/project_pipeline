@@ -100,6 +100,7 @@ class LabelSchemaVersion(Base, Timestamped):
     __tablename__ = "label_schema_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("LABEL"))
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    parent_label_schema_id: Mapped[str | None] = mapped_column(ForeignKey("label_schema_versions.id"), nullable=True, index=True)
     dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(200))
     version: Mapped[str] = mapped_column(String(100))

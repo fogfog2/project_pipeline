@@ -90,6 +90,7 @@ class VersionDefinitionCreate(BaseModel):
     name: str
     version: str
     dataset_id: str | None = None
+    parent_label_schema_id: str | None = None
     classes: list[dict[str, Any]] = Field(default_factory=list)
     mapping: dict[str, Any] = Field(default_factory=dict)
     definition: dict[str, Any] = Field(default_factory=dict)

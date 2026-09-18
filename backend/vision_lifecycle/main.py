@@ -730,9 +730,17 @@ def list_label_schemas(project_id: str, session: Session = Depends(get_session))
 
 @app.post("/api/v1/projects/{project_id}/label-schemas", status_code=201)
 def create_label_schema(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
-    require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
-    value = {"name": payload.name, "version": payload.version, "classes": payload.classes, "mapping": payload.mapping, "dataset_id": payload.dataset_id}
-    item = LabelSchemaVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, classes=payload.classes, mapping=payload.mapping, status=payload.status, content_hash=_version_hash(value))
+    require_project(session, project_id)
+    _version_dataset(session, project_id, payload.dataset_id)
+    parent = None
+    if payload.parent_label_schema_id:
+        parent = session.get(LabelSchemaVersion, payload.parent_label_schema_id)
+        if not parent or parent.project_id != project_id:
+            raise HTTPException(422, "Parent label schema must belong to this project")
+        if parent.dataset_id and payload.dataset_id and parent.dataset_id != payload.dataset_id:
+            raise HTTPException(422, "Parent label schema must use the selected DatasetVersion")
+    value = {"name": payload.name, "version": payload.version, "classes": payload.classes, "mapping": payload.mapping, "dataset_id": payload.dataset_id, "parent_label_schema_id": payload.parent_label_schema_id}
+    item = LabelSchemaVersion(project_id=project_id, parent_label_schema_id=payload.parent_label_schema_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, classes=payload.classes, mapping=payload.mapping, status=payload.status, content_hash=_version_hash(value))
     session.add(item); session.commit(); session.refresh(item); return as_dict(item)
 
 

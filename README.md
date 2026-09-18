@@ -54,6 +54,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 모델 등록 화면에서 학습 DatasetVersion과 외부 `training` Run을 각각 선택하며, lineage graph가 `training run → model` 관계를 표시
 - 등록 가능한 checkpoint/config 파일의 SHA-256 provenance 기록
 - label schema, split, evaluation set, calibration set의 versioned contract와 content hash
+- Label schema version 간 parent mapping과 lineage를 보존해 class 변경 이력을 역추적
 - evaluation set `definition.items`/`image_ids`를 실제 분류·COCO·ONNX batch 평가 입력으로 적용하고 선택 개수와 평가 레코드 수를 결과에 기록
 - Evaluation set 생성 시 중복·누락·Dataset 범위·빈 목록을 검증하고 데이터 확정 후 UI에서 재검증
 - Calibration set의 sample/중복/seed/전처리 선언 검증 및 validation statistics
