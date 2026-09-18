@@ -60,16 +60,18 @@ def _prediction_error(item: object, image_ids: set[int], category_ids: set[int])
     return None
 
 
-def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou_threshold: float = 0.5) -> dict:
+def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou_threshold: float = 0.5, image_ids: set[int] | None = None) -> dict:
     """A small, dependency-free COCO-style AP@IoU evaluator for onboarding fixtures.
 
     Full COCO AP@[.50:.95] remains an integration point for pycocotools/MMDetection.
     """
     coco = load_coco(annotation_path)
     categories = {category["id"]: category["name"] for category in coco["categories"]}
-    image_ids = {image["id"] for image in coco.get("images", []) if isinstance(image.get("id"), int)}
+    selected_image_ids = image_ids if image_ids is not None else {image["id"] for image in coco.get("images", []) if isinstance(image.get("id"), int)}
     ground_truth: dict[int, dict[tuple[int, int], list[dict]]] = defaultdict(lambda: defaultdict(list))
     for annotation in coco["annotations"]:
+        if annotation.get("image_id") not in selected_image_ids:
+            continue
         if annotation.get("iscrowd", 0):
             continue
         ground_truth[annotation["category_id"]][(annotation["image_id"], annotation["category_id"])].append(annotation)
@@ -77,7 +79,9 @@ def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou
     invalid_predictions = 0
     invalid_prediction_examples: list[dict] = []
     for index, prediction in enumerate(predictions):
-        reason = _prediction_error(prediction, image_ids, set(categories))
+        if image_ids is not None and isinstance(prediction, dict) and isinstance(prediction.get("image_id"), int) and not isinstance(prediction.get("image_id"), bool) and prediction["image_id"] not in selected_image_ids:
+            continue
+        reason = _prediction_error(prediction, selected_image_ids, set(categories))
         if reason:
             invalid_predictions += 1
             if len(invalid_prediction_examples) < 50:
@@ -122,7 +126,7 @@ def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou
     }
 
 
-def evaluate_coco_full(annotation_path: str, predictions: list[dict]) -> dict:
+def evaluate_coco_full(annotation_path: str, predictions: list[dict], image_ids: set[int] | None = None) -> dict:
     """Evaluate a COCO prediction JSON with the official COCO bbox protocol.
 
     This intentionally stays separate from the small AP50 evaluator used during
@@ -138,13 +142,27 @@ def evaluate_coco_full(annotation_path: str, predictions: list[dict]) -> dict:
     source = Path(annotation_path)
     if not source.is_file():
         raise ValueError(f"COCO annotation does not exist: {annotation_path}")
-    coco_gt = COCO(str(source))
+    requested_image_ids = image_ids
+    subset_path: Path | None = None
+    annotation_source = source
+    if image_ids is not None:
+        source_data = json.loads(source.read_text(encoding="utf-8"))
+        selected = set(image_ids)
+        source_data["images"] = [item for item in source_data.get("images", []) if item.get("id") in selected]
+        source_data["annotations"] = [item for item in source_data.get("annotations", []) if item.get("image_id") in selected]
+        with NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8", delete=False) as file:
+            json.dump(source_data, file)
+            subset_path = Path(file.name)
+        annotation_source = subset_path
+    coco_gt = COCO(str(annotation_source))
     category_ids = {category["id"] for category in coco_gt.dataset.get("categories", [])}
     valid: list[dict] = []
     image_ids = {image["id"] for image in coco_gt.dataset.get("images", []) if isinstance(image.get("id"), int)}
     invalid = 0
     invalid_examples: list[dict] = []
     for index, item in enumerate(predictions):
+        if requested_image_ids is not None and isinstance(item, dict) and isinstance(item.get("image_id"), int) and not isinstance(item.get("image_id"), bool) and item["image_id"] not in requested_image_ids:
+            continue
         reason = _prediction_error(item, image_ids, category_ids)
         if reason:
             invalid += 1
@@ -153,11 +171,14 @@ def evaluate_coco_full(annotation_path: str, predictions: list[dict]) -> dict:
             continue
         valid.append({key: item[key] for key in ("image_id", "category_id", "bbox", "score")})
     if not valid:
-        return {
+        result = {
             "metric_scope": "official COCO bbox AP@[.50:.95] (no valid predictions)",
             "bbox_mAP": 0.0, "bbox_AP50": 0.0, "bbox_AP75": 0.0, "bbox_AR100": 0.0,
             "invalid_predictions": invalid, "invalid_prediction_examples": invalid_examples, "per_class": {},
         }
+        if subset_path:
+            subset_path.unlink(missing_ok=True)
+        return result
 
     def run(category_id: int | None = None) -> list[float]:
         with NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8", delete=False) as file:
@@ -184,9 +205,12 @@ def evaluate_coco_full(annotation_path: str, predictions: list[dict]) -> dict:
             "category_id": category["id"], "bbox_mAP": round(class_stats[0], 6),
             "bbox_AP50": round(class_stats[1], 6), "bbox_AP75": round(class_stats[2], 6),
         }
-    return {
+    result = {
         "metric_scope": "official COCO bbox AP@[.50:.95]",
         "bbox_mAP": round(stats[0], 6), "bbox_AP50": round(stats[1], 6),
         "bbox_AP75": round(stats[2], 6), "bbox_AR100": round(stats[8], 6),
         "invalid_predictions": invalid, "invalid_prediction_examples": invalid_examples, "per_class": per_class,
     }
+    if subset_path:
+        subset_path.unlink(missing_ok=True)
+    return result

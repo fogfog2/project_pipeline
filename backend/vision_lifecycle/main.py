@@ -601,6 +601,50 @@ def _version_hash(value: dict) -> str:
     return "sha256:" + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
 
 
+def _evaluation_item_keys(evaluation_set: EvaluationSetVersion | None) -> set[str] | None:
+    """Return explicit item identifiers from an evaluation-set definition.
+
+    An evaluation set without an item list intentionally means the whole linked
+    dataset.  Once ``items`` or ``image_ids`` is present, even an empty list is
+    meaningful and selects no records.  Item objects may carry ``image_id``,
+    ``item_id`` or ``id`` so the same contract can be used by image manifests
+    and classification record files.
+    """
+    if evaluation_set is None:
+        return None
+    definition = evaluation_set.definition if isinstance(evaluation_set.definition, dict) else {}
+    raw = next((definition[key] for key in ("items", "image_ids") if key in definition), None)
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise HTTPException(422, "Evaluation set definition items/image_ids must be a list")
+    keys: set[str] = set()
+    for item in raw:
+        value = item
+        if isinstance(item, dict):
+            value = item.get("image_id", item.get("item_id", item.get("id")))
+        if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise HTTPException(422, "Evaluation set items must contain scalar image/item identifiers")
+        keys.add(str(value))
+    return keys
+
+
+def _evaluation_image_ids(evaluation_set: EvaluationSetVersion | None) -> set[int] | None:
+    keys = _evaluation_item_keys(evaluation_set)
+    if keys is None:
+        return None
+    values: set[int] = set()
+    for key in keys:
+        try:
+            value = int(key)
+        except ValueError as error:
+            raise HTTPException(422, "COCO evaluation set items must use integer image IDs") from error
+        if str(value) != key:
+            raise HTTPException(422, "COCO evaluation set items must use canonical integer image IDs")
+        values.add(value)
+    return values
+
+
 def _evidence_safe(value):
     if isinstance(value, dict):
         result = {}
@@ -1100,16 +1144,22 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
             predictions = json.load(file)
         if not isinstance(predictions, list):
             raise ValueError("Prediction JSON must be a list")
+        evaluation_image_ids = _evaluation_image_ids(evaluation_set)
         if payload.protocol == "onboarding_ap50":
-            result = evaluate_coco_predictions(dataset.annotation_path, predictions, payload.iou_threshold)
+            result = evaluate_coco_predictions(dataset.annotation_path, predictions, payload.iou_threshold, image_ids=evaluation_image_ids)
         elif payload.protocol == "coco_full":
-            result = evaluate_coco_full(dataset.annotation_path, predictions)
+            result = evaluate_coco_full(dataset.annotation_path, predictions, image_ids=evaluation_image_ids)
         else:
             raise ValueError("protocol must be onboarding_ap50 or coco_full")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         raise HTTPException(422, str(error)) from error
     metric_scope = result.get("metric_scope", "")
     details = {key: value for key, value in result.items() if key != "metric_scope"}
+    if evaluation_set:
+        details["evaluation_set_filter"] = {
+            "evaluation_set_id": evaluation_set.id,
+            "selected_image_count": len(evaluation_image_ids) if evaluation_image_ids is not None else "all",
+        }
     metrics = {key: value for key, value in details.items() if isinstance(value, (int, float))}
     run = Run(
         project_id=project_id, kind="evaluation", name=f"{model.family} prediction import", status="completed",
@@ -1150,9 +1200,21 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
     if evaluation_set and evaluation_set.dataset_id and evaluation_set.dataset_id != payload.dataset_id:
         raise HTTPException(422, "Evaluation set must reference the selected DatasetVersion")
     try:
-        result = evaluate_classification(payload.records)
+        evaluation_item_keys = _evaluation_item_keys(evaluation_set)
+        records = payload.records
+        if evaluation_item_keys is not None:
+            records = [record for record in records if str(record.get("image_id", record.get("item_id", record.get("id", "")))) in evaluation_item_keys]
+            if not records:
+                raise ValueError("Evaluation set selected no classification records")
+        result = evaluate_classification(records)
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
+    if evaluation_set:
+        result["evaluation_set_filter"] = {
+            "evaluation_set_id": evaluation_set.id,
+            "selected_item_count": len(evaluation_item_keys) if evaluation_item_keys is not None else "all",
+            "evaluated_record_count": result.get("records", 0),
+        }
     metric_keys = {"top1_accuracy", "topk_accuracy", "macro_precision", "macro_recall", "macro_f1", "records"}
     run = Run(
         project_id=project_id, kind="evaluation", name=f"{model.family} classification evaluation", status="completed",
@@ -1201,6 +1263,11 @@ def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, ses
             if not image_path.is_absolute():
                 image_path = records_path.parent / image_path
             resolved_records.append({**record, "image_path": str(image_path)})
+        evaluation_item_keys = _evaluation_item_keys(evaluation_set)
+        if evaluation_item_keys is not None:
+            resolved_records = [record for record in resolved_records if str(record.get("image_id", record.get("item_id", record.get("id", "")))) in evaluation_item_keys]
+            if not resolved_records:
+                raise ValueError("Evaluation set selected no ONNX records")
         predictions = [infer_onnx(model.artifact_path, record["image_path"], profile) for record in resolved_records]
         if model.task_kind == "classification":
             class_names = [str(value) for value in dataset.class_names]
@@ -1231,12 +1298,18 @@ def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, ses
                         raise ValueError(f"Detection class mapping is missing model label {label}")
                     category_id = mapping.get(label, mapping.get(item.get("label")))
                     coco_predictions.append({"image_id": image_id, "category_id": int(category_id), "bbox": item["bbox"], "score": item["score"]})
-            result = evaluate_coco_full(dataset.annotation_path, coco_predictions)
+            result = evaluate_coco_full(dataset.annotation_path, coco_predictions, image_ids=_evaluation_image_ids(evaluation_set))
             metrics = {key: value for key, value in result.items() if isinstance(value, (int, float))}
             details = {key: value for key, value in result.items() if key != "metric_scope"}
             details.update({"records_path": payload.records_path, "inference_provider": predictions[0].get("provider", "unknown"), "prediction_count": len(coco_predictions)})
         else:
             raise ValueError(f"ONNX batch evaluation does not support task_kind {model.task_kind}")
+        if evaluation_set:
+            details["evaluation_set_filter"] = {
+                "evaluation_set_id": evaluation_set.id,
+                "selected_item_count": len(evaluation_item_keys) if evaluation_item_keys is not None else "all",
+                "evaluated_record_count": len(resolved_records),
+            }
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         raise HTTPException(422, str(error)) from error
     run = Run(project_id=project_id, kind="evaluation", name=f"{model.family} ONNX batch evaluation", status="completed", dataset_id=dataset.id, model_id=model.id, config={"evaluator_version": payload.evaluator_version, "protocol": "onnx-batch", "task_kind": model.task_kind, "top_k": payload.top_k, "scope": result.get("metric_scope", "classification"), **({"evaluation_set_id": evaluation_set.id} if evaluation_set else {})}, metrics=metrics, details=details, environment={"provider": details.get("inference_provider", "unknown"), "runtime": "onnxruntime-cpu"}, notes="ONNX batch inference and evaluation from an explicit image record manifest.")

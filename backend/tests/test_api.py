@@ -412,17 +412,41 @@ def test_evaluation_set_is_persisted_and_must_match_dataset():
         other_dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "other", "version": "v1"}).json()
         model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "fixture", "task_kind": "detection", "source_dataset_id": dataset["id"]}).json()
         evaluation_set = client.post(f"/api/v1/projects/{project_id}/evaluation-sets", json={
-            "name": "core", "version": "v1", "dataset_id": dataset["id"], "purpose": "core", "definition": {"items": [1, 2]},
+            "name": "core", "version": "v1", "dataset_id": dataset["id"], "purpose": "core", "definition": {"items": [1]},
         }).json()
         valid = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
             "model_id": model["id"], "dataset_id": dataset["id"], "evaluation_set_id": evaluation_set["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",
         })
         assert valid.status_code == 201
         assert valid.json()["run"]["config"]["evaluation_set_id"] == evaluation_set["id"]
+        assert valid.json()["run"]["details"]["evaluation_set_filter"]["selected_image_count"] == 1
+        assert valid.json()["run"]["details"]["invalid_predictions"] == 0
         invalid = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
             "model_id": model["id"], "dataset_id": other_dataset["id"], "evaluation_set_id": evaluation_set["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",
         })
         assert invalid.status_code == 422
+
+
+def test_classification_evaluation_set_filters_records_before_metrics():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "classification-evaluation-set", "task_kind": "classification"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "labels", "version": "v1", "task_kind": "classification", "class_names": ["cat", "dog"]}).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "classifier", "version": "v1", "family": "fixture", "task_kind": "classification"}).json()
+        evaluation_set = client.post(f"/api/v1/projects/{project_id}/evaluation-sets", json={
+            "name": "core", "version": "v1", "dataset_id": dataset["id"], "definition": {"items": ["1"]},
+        }).json()
+        response = client.post(f"/api/v1/projects/{project_id}/evaluations/classification", json={
+            "model_id": model["id"], "dataset_id": dataset["id"], "evaluation_set_id": evaluation_set["id"],
+            "records": [
+                {"image_id": "1", "ground_truth": "cat", "prediction": "cat"},
+                {"image_id": "2", "ground_truth": "dog", "prediction": "cat"},
+            ],
+        })
+        assert response.status_code == 201, response.text
+        assert response.json()["result"]["top1_accuracy"] == 1.0
+        assert response.json()["run"]["details"]["evaluation_set_filter"]["evaluated_record_count"] == 1
 
 
 def test_versioned_contract_schemas_are_available_from_api():
