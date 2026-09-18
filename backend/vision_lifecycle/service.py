@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, QuantizationRun, Release, Run, SplitVersion, StorageMapping, TargetProfile
+from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, QuantizationRun, Release, Run, SplitVersion, StorageMapping, TargetProfile
 
 
 def overview(session: Session, project_id: str) -> dict:
@@ -171,7 +171,7 @@ def safe_export(session: Session, project_id: str) -> dict:
 
     def safe(item):
         data = as_dict(item)
-        for key in {"storage_root", "root_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"}:
+        for key in {"storage_root", "root_path", "source_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"}:
             data.pop(key, None)
         # A dataset fingerprint is useful for tamper detection, but its internal
         # detail keys are source paths.  Pages exports must stay portable and
@@ -187,6 +187,20 @@ def safe_export(session: Session, project_id: str) -> dict:
                 key: value for key, value in data["last_validation"].items()
                 if key in {"status", "readable", "writable", "reason"}
             }
+        if isinstance(data.get("details"), dict):
+            def scrub(value):
+                if isinstance(value, dict):
+                    cleaned = {}
+                    for key, nested in value.items():
+                        lowered = str(key).lower()
+                        if any(token in lowered for token in ("path", "command", "environment", "secret", "token", "password", "credential")):
+                            continue
+                        cleaned[key] = scrub(nested)
+                    return cleaned
+                if isinstance(value, list):
+                    return [scrub(nested) for nested in value]
+                return value
+            data["details"] = scrub(data["details"])
         return data
 
     return {
@@ -196,6 +210,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "runs": [safe(x) for x in session.scalars(select(Run).where(Run.project_id == project_id)).all()],
         "storages": [safe(x) for x in session.scalars(select(StorageMapping).where(StorageMapping.project_id == project_id)).all()],
         "assets": [safe(x) for x in session.scalars(select(DataAsset).where(DataAsset.project_id == project_id)).all()],
+        "artifacts": [safe(x) for x in session.scalars(select(Artifact).where(Artifact.project_id == project_id)).all()],
         "label_schemas": [safe(x) for x in session.scalars(select(LabelSchemaVersion).where(LabelSchemaVersion.project_id == project_id)).all()],
         "splits": [safe(x) for x in session.scalars(select(SplitVersion).where(SplitVersion.project_id == project_id)).all()],
         "evaluation_sets": [safe(x) for x in session.scalars(select(EvaluationSetVersion).where(EvaluationSetVersion.project_id == project_id)).all()],
@@ -204,7 +219,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "board_benchmarks": [safe(x) for x in session.scalars(select(BoardBenchmark).where(BoardBenchmark.project_id == project_id)).all()],
         "targets": [safe(x) for x in session.scalars(select(TargetProfile).where(TargetProfile.project_id == project_id)).all()],
         "releases": [safe(x) for x in session.scalars(select(Release).where(Release.project_id == project_id)).all()],
-        "redactions": ["storage_root", "root_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"],
+        "redactions": ["storage_root", "root_path", "source_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"],
     }
 
 
@@ -254,6 +269,9 @@ def seed_demo(session: Session) -> Project:
     )
     session.add_all([rtm, yolox])
     session.flush()
+    for model in (rtm, yolox):
+        session.add(Artifact(project_id=project.id, kind="model", logical_name=f"{model.name}/{model.version}/artifact", source_path=model.artifact_path, status="unavailable", notes="공식 checkpoint는 별도 준비 script로 연결합니다."))
+        session.add(Artifact(project_id=project.id, kind="config", logical_name=f"{model.name}/{model.version}/config", source_path=model.config_path, status="unavailable", notes="MMDetection config 예시 경로"))
     for model, map_value, ap50, latency in [(rtm, 0.412, 0.621, 11.8), (yolox, 0.398, 0.607, 14.3)]:
         session.add(Run(
             project_id=project.id, kind="evaluation", name=f"{model.family} COCO8 evaluation", status="completed",

@@ -43,13 +43,13 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S04 | §6: 그룹 단위 split·누수 방지 | 미구현 | SplitVersion과 event/device/session 중복 검증 없음 |
 | S05 | §7: Core/Field/Hard/Regression 고정 평가 세트 | 미구현 | 평가가 일반 dataset_id만 참조. 별도 평가 세트·slice membership 없음 |
 | S06 | §8: field 실패 사례를 다음 dataset으로 연결 | 미구현 | FieldDataBatch, prediction/수정 label/원본 모델 관계, 후보 승격 이력 없음 |
-| S07 | §9: 외부 학습 결과 등록 | 부분 구현 | Run.config/environment 및 외부 ID 중복 검사 존재. commit/seed/loss/split 규격, artifact 보존, unknown 추적, parent 참조 검증 미완성. `importer.py`, `main.py` |
-| S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 경로·alias 필드 존재. 실제 파일 보관/hash, alias 전환 API·이력, ONNX metadata 삽입/검증 없음 |
+| S07 | §9: 외부 학습 결과 등록 | 부분 구현 | Run.config/environment/details 및 외부 ID 중복 검사, model/config/prediction hash artifact가 존재. commit/seed/loss/split 규격, unknown 추적, parent 참조 검증 미완성. `importer.py`, `main.py` |
+| S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 모델·config 파일의 SHA-256 provenance와 수정 시 새 artifact 기록을 제공한다. 관리 artifact 디렉터리 복사, alias 전환 이력, ONNX metadata 삽입/검증은 남아 있다 |
 | S09 | §11: 독립 calibration 버전·통계 | 미구현 | CalibrationSetVersion과 sampling/전처리/분포 추적 없음 |
 | S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | `kind=quantization` 일반 Run 저장만 가능. source/output model, calibration, encoding의 강제 참조와 matrix UI 없음 |
 | S11 | §11: Quantization Loss·Target Gap 계산 | 미구현 | FP32/QuantSim/Target 역할 및 동일 lineage의 결과 세 개를 선택하는 서비스 없음 |
 | S12 | §12: 분류·검출 공통 평가 | 부분 구현 | 외부 prediction 기반 분류, AP50, pycocotools bbox 평가 존재. 전체 dataset ONNX 실행 job·검증·저장 연결 없음 |
-| S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 일부 계산 결과는 응답에만 포함. Run에는 scalar만 저장하므로 재접속 후 상세 결과 조회 불가. micro 지표, 고정 Top-K 규약, ECE, slice·오류 파일 미구현 |
+| S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 분류 confusion/per-class와 COCO per-class/invalid 결과를 Run.details에 저장하고 재조회 가능. micro 지표, 고정 Top-K 규약, ECE, slice·오류 파일·시각화 artifact는 미구현 |
 | S14 | §12,17: baseline/candidate 공식 비교 | 부분 구현·정확성 보완 필요 | 최신 evaluation 하나씩 선택. dataset·evaluator 문자열·model mapping 검사만 존재. Run 완료 여부, 비어 있는 평가 ID, 전체 설정 hash 비교 부족. `service.py:compare_models` |
 | S15 | §13: target profile·외부 보드 결과 | 부분 구현 | target 행 등록·board import 연결 존재. 측정 단위/범위/환경 규격·산출물 검증 및 board 결과에서 공통 평가 연결 미완성 |
 | S16 | §13: 외부 작업 실행·취소·복구 | 부분 구현 | subprocess runner 존재. API 내부 daemon thread이며 독립 worker가 아님. 재시작 복구·실시간 로그·취소 경쟁 조건·자식 프로세스 종료 보완 필요. `runner.py` |
@@ -58,7 +58,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S19 | 후속 요구: 처음 사용자 UI만으로 온보딩 | 부분 구현 | 프로젝트/모델/target 입력, 경로 검사 가능. 저장 후 재개 wizard, dataset 등록·확정, Git/storage/runner 편집, 평가 실행·release 폼 미구현. `frontend/src/main.tsx` |
 | S20 | 후속 요구: RTMDet·YOLOX 실제 예제 | 부분 구현·실모델 미검증 | COCO annotation·수기 예측 fixture 및 다운로드 recipe 존재. 예제 이미지/실제 두 모델의 native→ONNX→평가 E2E 없음. MMDetection/MMDeploy 어댑터 존재와 실행 성공은 별개 |
 | S21 | 후속 요구: API/CLI/agent 동일 서비스 | 부분 구현 | CLI는 일부 등록·검사·export만 제공하고 ORM 직접 생성. API Pydantic/참조 검증과 불일치. skill은 안내문이며 formal adapter registry·JSON Schema·contract suite 미완성 |
-| S22 | 후속 요구: Pages 실제 결과 조회 | 부분 구현·정확성 보완 필요 | 수동 demo snapshot 사용. export에는 UI가 요구하는 overview/생성시각 없음. 정적 화면에 로컬 API 작업 버튼 일부 노출. 중첩 metadata/config/environment 자유 입력값까지 공개 가능 |
+| S22 | 후속 요구: Pages 실제 결과 조회 | 부분 구현·정확성 보완 필요 | export가 artifact hash와 평가 상세를 포함하고 경로/중첩 details의 path·command·secret 계열 키를 제거한다. 수동 demo snapshot, 생성시각/선택 프로젝트 자동화, 중첩 자유값 전체 allowlist, 정적 화면의 상세 리포트는 추가 필요 |
 | S23 | 후속 요구: 백업·복구·경로 이동 | 미구현 | Alembic 없음, create_all + 수동 ALTER만 존재. storage ID 매핑·artifact 백업·복원 검증 없음 |
 
 §1–3·15·17·19–21의 목표/아키텍처/수용 기준은 위 S01–S23의 통합 완료로 판단한다. §16의 추천 도구는 의무 설치 항목이 아니며 §18의 일정은 기존 예시로만 취급한다. §22 외부 참고 링크의 현재 제품 기능은 이번 코드 감사에서 재검증하지 않았다.
@@ -71,7 +71,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 2. **잘못된 lineage 생성**: 1차 해결. UI가 dataset 첫 항목을 자동 연결하지 않고 사용자의 선택/unknown을 저장한다. 실제 content hash 검증은 남아 있다.
 3. **참조 무결성**: 1차 해결. model/dataset/run/parent/result/release의 프로젝트 소속과 source 존재를 검사한다. API·CLI 공통 service 통합과 cycle/richer kind 검증은 남아 있다.
 4. **비교·gate 공통 계약**: gate의 unknown section, 빈 rules, lower-is-better latency 회귀는 보수했다. protocol/IoU/label mapping/evaluation set 계약과 release baseline 호환성 검사는 남아 있다.
-5. **정적 export 계약**: 자유 JSON의 상위 경로 key 몇 개만 제거하는 방식은 metadata 안의 절대 경로·secret·command를 제거하지 못한다. 공개 필드 allowlist와 schema 검증으로 바꾸고 overview·생성시각·선택한 결과를 포함한다. export로 생성한 snapshot을 그대로 정적 UI에서 검증한다.
+5. **정적 export 계약**: 상위 경로와 평가 details의 path·command·secret 계열 키를 제거하는 보수적 redaction을 1차 적용했다. 공개 필드 allowlist와 schema 검증, overview·생성시각·선택한 결과를 포함하는 규격, export snapshot 정적 UI 검증은 남아 있다.
 6. **입력 오류를 성공으로 처리하지 않기**: bbox NaN/무한대·음수 크기, 알 수 없는 image/class, 중복 prediction ID, classification 정답과 dataset 불일치를 검사한다. 표준 COCO evaluator도 빈 예측 시 모든 지표 0으로 조기 반환해 undefined category 구분을 잃으므로 공식 evaluator와 일치하도록 보완한다.
 
 ## 5. 추가 개발 순서와 완료 조건
@@ -112,7 +112,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 - versioned preprocessing/postprocessing: resize/letterbox 역변환, RGB/BGR, normalization, bbox 단위/좌표계, NMS, threshold, class mapping. 알 수 없는 출력은 adapter required로 표시.
 - ONNX 기본 분류·검출 adapter와 MMDetection/MMDeploy profile을 검증하고 실행 provider/package 버전 기록.
 - Top-K의 K, micro/macro/per-class 지표, confusion pair, slices, confidence calibration을 규격화. COCO AP/AP50/AP75/AR 및 undefined 값 처리 통일.
-- predictions, metrics, per_class, confusion, error_cases, slice_metrics, comparison HTML/CSV를 artifact로 저장하고 API/UI에서 재조회.
+- predictions 입력은 hash artifact로 등록하고 metrics, per_class, confusion, invalid/error 상세는 `Run.details`에 저장해 API/UI에서 재조회. slice_metrics와 comparison HTML/CSV artifact는 후속 구현.
 - 합성 이미지·실행 가능한 classification/detection ONNX fixture 제공. RTMDet-tiny·YOLOX-s 공식 모델 recipe는 다운로드 분리, 호환 환경 버전과 검증된 출력 profile 명시.
 - UI: 평가 모델·세트·profile 선택, 미리보기 bbox 확인, 실행 job, 클래스 회귀·오류 사례 비교. 데이터셋과 calibration 버전 비교도 제공.
 - 완료: 정답/오답/빈 검출/배경/invalid bbox/잘못된 mapping fixture 검증, 실제 두 모델 sample 검증 결과 별도 기록. synthetic 성공을 실제 RTMDet/YOLOX 성공으로 표시하지 않는다.

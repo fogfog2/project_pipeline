@@ -35,7 +35,7 @@ def init_database() -> None:
     # Alembic without changing the public API.
     run_columns = {column["name"] for column in inspect(engine).get_columns("runs")}
     project_columns = {column["name"] for column in inspect(engine).get_columns("projects")}
-    additions = {"external_run_id": "VARCHAR(200)", "import_hash": "VARCHAR(128)"}
+    additions = {"external_run_id": "VARCHAR(200)", "import_hash": "VARCHAR(128)", "details": "JSON NOT NULL DEFAULT '{}'"}
     with engine.begin() as connection:
         for name, declaration in additions.items():
             if name not in run_columns:

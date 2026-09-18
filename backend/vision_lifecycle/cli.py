@@ -10,7 +10,9 @@ from sqlalchemy import select
 
 from .adapters.coco import validate_coco
 from .adapters.inspect import inspect_path
+from .artifacts import register_artifact
 from .database import SessionLocal, engine, init_database
+from .fingerprints import dataset_fingerprint, file_sha256
 from .models import DatasetVersion, ModelVersion, Project
 from .runner import run_worker
 from .serializers import as_dict
@@ -47,6 +49,9 @@ def main() -> None:
     create_model = sub.add_parser("create-model", help="Register a ModelVersion from a JSON object")
     create_model.add_argument("project_id")
     create_model.add_argument("manifest")
+    artifact = sub.add_parser("register-artifact", help="Register and hash a file provenance record")
+    artifact.add_argument("project_id")
+    artifact.add_argument("manifest", help="JSON object with kind, logical_name, and optional source_path")
     export = sub.add_parser("export", help="Write a Pages-safe project snapshot")
     export.add_argument("project_id")
     export.add_argument("--output", required=True, help="Destination JSON file")
@@ -102,13 +107,36 @@ def main() -> None:
         elif args.command == "create-dataset":
             if not session.get(Project, args.project_id):
                 raise ValueError("Project not found")
-            dataset = DatasetVersion(project_id=args.project_id, **_read_json(args.manifest))
-            session.add(dataset); session.commit(); session.refresh(dataset); _json(as_dict(dataset))
+            payload = _read_json(args.manifest)
+            content_hash, fingerprints = dataset_fingerprint(payload.get("manifest_path"), payload.get("annotation_path"))
+            if fingerprints:
+                payload["validation"] = {**payload.get("validation", {}), "source_fingerprints": fingerprints}
+            payload["content_hash"] = content_hash
+            dataset = DatasetVersion(project_id=args.project_id, **payload)
+            session.add(dataset); session.flush()
+            if payload.get("annotation_path"):
+                register_artifact(session, args.project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", source_path=payload["annotation_path"])
+            if payload.get("manifest_path"):
+                register_artifact(session, args.project_id, kind="dataset-manifest", logical_name=f"{dataset.name}/{dataset.version}/manifest", source_path=payload["manifest_path"])
+            session.commit(); session.refresh(dataset); _json(as_dict(dataset))
         elif args.command == "create-model":
             if not session.get(Project, args.project_id):
                 raise ValueError("Project not found")
-            model = ModelVersion(project_id=args.project_id, **_read_json(args.manifest))
-            session.add(model); session.commit(); session.refresh(model); _json(as_dict(model))
+            payload = _read_json(args.manifest)
+            payload["artifact_sha256"] = file_sha256(payload["artifact_path"]) if payload.get("artifact_path") and Path(payload["artifact_path"]).is_file() else None
+            payload["config_sha256"] = file_sha256(payload["config_path"]) if payload.get("config_path") and Path(payload["config_path"]).is_file() else None
+            model = ModelVersion(project_id=args.project_id, **payload)
+            session.add(model); session.flush()
+            if payload.get("artifact_path"):
+                register_artifact(session, args.project_id, kind="model", logical_name=f"{model.name}/{model.version}/artifact", source_path=payload["artifact_path"], sha256=payload["artifact_sha256"])
+            if payload.get("config_path"):
+                register_artifact(session, args.project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", source_path=payload["config_path"], sha256=payload["config_sha256"])
+            session.commit(); session.refresh(model); _json(as_dict(model))
+        elif args.command == "register-artifact":
+            if not session.get(Project, args.project_id):
+                raise ValueError("Project not found")
+            artifact = register_artifact(session, args.project_id, **_read_json(args.manifest))
+            session.commit(); session.refresh(artifact); _json(as_dict(artifact))
         elif args.command == "export":
             output = Path(args.output); output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json.dumps(safe_export(session, args.project_id), default=str, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

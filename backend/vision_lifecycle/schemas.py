@@ -118,6 +118,14 @@ class StepProgressUpdate(BaseModel):
     evidence: dict[str, Any] = Field(default_factory=dict)
 
 
+class ArtifactCreate(BaseModel):
+    kind: str = "file"
+    logical_name: str
+    source_path: str | None = None
+    sha256: str | None = None
+    notes: str = ""
+
+
 class ModelUpdate(BaseModel):
     name: str | None = None
     alias: str | None = None
@@ -151,6 +159,7 @@ class RunCreate(BaseModel):
     parent_run_id: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     metrics: dict[str, float] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
     environment: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
 

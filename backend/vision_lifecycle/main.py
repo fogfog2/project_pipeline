@@ -21,12 +21,13 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
+from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
+from .artifacts import register_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 
@@ -249,7 +250,12 @@ def create_dataset(project_id: str, payload: DatasetCreate, session: Session = D
     content_hash, fingerprints = dataset_fingerprint(payload.manifest_path, payload.annotation_path)
     validation = {**payload.validation, "source_fingerprints": fingerprints} if fingerprints else payload.validation
     dataset = DatasetVersion(project_id=project_id, **payload.model_dump(exclude={"validation"}), content_hash=content_hash, validation=validation)
-    session.add(dataset); session.commit(); session.refresh(dataset)
+    session.add(dataset); session.flush()
+    if payload.annotation_path:
+        register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{payload.name}/{payload.version}/annotation", source_path=payload.annotation_path)
+    if payload.manifest_path:
+        register_artifact(session, project_id, kind="dataset-manifest", logical_name=f"{payload.name}/{payload.version}/manifest", source_path=payload.manifest_path)
+    session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
 
@@ -261,8 +267,16 @@ def update_dataset(project_id: str, dataset_id: str, payload: DatasetUpdate, ses
         raise HTTPException(404, "Dataset not found")
     if dataset.status == "finalized":
         raise HTTPException(409, "Finalized DatasetVersion is immutable; create a new version")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    values = payload.model_dump(exclude_unset=True)
+    for key, value in values.items():
         setattr(dataset, key, value)
+    if "annotation_path" in values or "manifest_path" in values:
+        dataset.content_hash, fingerprints = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
+        dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints}
+        if "annotation_path" in values and dataset.annotation_path:
+            register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", source_path=dataset.annotation_path)
+        if "manifest_path" in values and dataset.manifest_path:
+            register_artifact(session, project_id, kind="dataset-manifest", logical_name=f"{dataset.name}/{dataset.version}/manifest", source_path=dataset.manifest_path)
     session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
@@ -447,6 +461,20 @@ def _version_hash(value: dict) -> str:
     return "sha256:" + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+@app.get("/api/v1/projects/{project_id}/artifacts")
+def list_artifacts(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(Artifact).where(Artifact.project_id == project_id).order_by(Artifact.created_at.desc())).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/artifacts", status_code=201)
+def create_artifact(project_id: str, payload: ArtifactCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    artifact = register_artifact(session, project_id, **payload.model_dump())
+    session.commit(); session.refresh(artifact)
+    return as_dict(artifact)
+
+
 def _version_dataset(session: Session, project_id: str, dataset_id: str | None):
     if not dataset_id:
         return None
@@ -579,7 +607,12 @@ def create_model(project_id: str, payload: ModelCreate, session: Session = Depen
     values["artifact_sha256"] = file_sha256(values["artifact_path"]) if values.get("artifact_path") and Path(values["artifact_path"]).is_file() else None
     values["config_sha256"] = file_sha256(values["config_path"]) if values.get("config_path") and Path(values["config_path"]).is_file() else None
     model = ModelVersion(project_id=project_id, **values)
-    session.add(model); session.commit(); session.refresh(model)
+    session.add(model); session.flush()
+    if values.get("artifact_path"):
+        register_artifact(session, project_id, kind="model", logical_name=f"{values['name']}/{values['version']}/artifact", source_path=values["artifact_path"], sha256=values.get("artifact_sha256"))
+    if values.get("config_path"):
+        register_artifact(session, project_id, kind="config", logical_name=f"{values['name']}/{values['version']}/config", source_path=values["config_path"], sha256=values.get("config_sha256"))
+    session.commit(); session.refresh(model)
     return as_dict(model)
 
 
@@ -589,12 +622,17 @@ def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: 
     model = session.get(ModelVersion, model_id)
     if not model or model.project_id != project_id:
         raise HTTPException(404, "Model not found")
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    values = payload.model_dump(exclude_unset=True)
+    for key, value in values.items():
         setattr(model, key, value)
-    if "artifact_path" in payload.model_dump(exclude_unset=True):
+    if "artifact_path" in values:
         model.artifact_sha256 = file_sha256(model.artifact_path) if model.artifact_path and Path(model.artifact_path).is_file() else None
-    if "config_path" in payload.model_dump(exclude_unset=True):
+        if model.artifact_path:
+            register_artifact(session, project_id, kind="model", logical_name=f"{model.name}/{model.version}/artifact", source_path=model.artifact_path, sha256=model.artifact_sha256)
+    if "config_path" in values:
         model.config_sha256 = file_sha256(model.config_path) if model.config_path and Path(model.config_path).is_file() else None
+        if model.config_path:
+            register_artifact(session, project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", source_path=model.config_path, sha256=model.config_sha256)
     session.commit(); session.refresh(model)
     return as_dict(model)
 
@@ -676,11 +714,12 @@ def import_result(project_id: str, payload: ResultImportCreate, session: Session
         if existing.import_hash == fingerprint:
             return {"status": "existing", "run": as_dict(existing)}
         raise HTTPException(409, "An external run with this ID exists but its manifest content differs")
+    details = dict(manifest.get("details", {}))
     run = Run(
         project_id=project_id, kind=manifest["kind"], name=manifest["name"], status=manifest.get("status", "completed"),
         dataset_id=dataset_id, model_id=model_id, parent_run_id=parent_run_id,
         external_run_id=manifest["external_run_id"], import_hash=fingerprint,
-        config={**manifest.get("config", {}), **({"target_profile_id": target_profile_id} if target_profile_id else {})}, metrics=manifest.get("metrics", {}), environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
+        config={**manifest.get("config", {}), **({"target_profile_id": target_profile_id} if target_profile_id else {})}, metrics=manifest.get("metrics", {}), details=details, environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
     )
     session.add(run); session.commit(); session.refresh(run)
     return {"status": "created", "run": as_dict(run)}
@@ -714,15 +753,24 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
             raise ValueError("protocol must be onboarding_ap50 or coco_full")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         raise HTTPException(422, str(error)) from error
+    metric_scope = result.get("metric_scope", "")
+    details = {key: value for key, value in result.items() if key != "metric_scope"}
+    metrics = {key: value for key, value in details.items() if isinstance(value, (int, float))}
+    prediction_artifact = register_artifact(
+        session, project_id, kind="prediction", logical_name=f"{model.name}/{model.version}/{dataset.name}/{dataset.version}/predictions",
+        source_path=payload.predictions_path, notes=f"{payload.protocol} evaluation input",
+    )
+    session.flush()
+    details["prediction_artifact_id"] = prediction_artifact.id
     run = Run(
         project_id=project_id, kind="evaluation", name=f"{model.family} prediction import", status="completed",
         dataset_id=dataset.id, model_id=model.id,
-        config={"evaluator_version": "coco-full-v1" if payload.protocol == "coco_full" and payload.evaluator_version == "lifecycle-ap50-v1" else payload.evaluator_version, "protocol": payload.protocol, "iou_threshold": payload.iou_threshold, "scope": result.pop("metric_scope")},
-        metrics={key: value for key, value in result.items() if isinstance(value, (int, float))},
+        config={"evaluator_version": "coco-full-v1" if payload.protocol == "coco_full" and payload.evaluator_version == "lifecycle-ap50-v1" else payload.evaluator_version, "protocol": payload.protocol, "iou_threshold": payload.iou_threshold, "scope": metric_scope},
+        metrics=metrics, details=details,
         environment={"source": "external-prediction-json"}, notes="Per-class output retained in evaluation import result.",
     )
     session.add(run); session.commit(); session.refresh(run)
-    return {"run": as_dict(run), "result": result}
+    return {"run": as_dict(run), "result": {"metric_scope": metric_scope, **details}}
 
 
 @app.post("/api/v1/projects/{project_id}/evaluations/classification", status_code=201)
@@ -744,7 +792,7 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
         project_id=project_id, kind="evaluation", name=f"{model.family} classification evaluation", status="completed",
         dataset_id=payload.dataset_id, model_id=model.id,
         config={"evaluator_version": payload.evaluator_version, "task_kind": "classification"},
-        metrics={key: result[key] for key in metric_keys}, environment={"source": "external-classification-records"},
+        metrics={key: result[key] for key in metric_keys}, details=result, environment={"source": "external-classification-records"},
         notes="Per-class and confusion matrix output is returned by this import response.",
     )
     session.add(run); session.commit(); session.refresh(run)

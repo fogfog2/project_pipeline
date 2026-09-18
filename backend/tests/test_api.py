@@ -28,6 +28,7 @@ def test_demo_api_validates_evaluates_and_redacts():
         })
         assert evaluation.status_code == 201
         assert evaluation.json()["run"]["metrics"]["bbox_AP50"] == 1.0
+        assert evaluation.json()["run"]["details"]["per_class"]["person"]["true_positive"] == 1
         full = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
             "model_id": rtm["id"], "dataset_id": datasets[0]["id"],
             "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json", "protocol": "coco_full",
@@ -124,13 +125,18 @@ def test_result_import_is_idempotent_and_detects_conflict():
     Base.metadata.create_all(engine)
     with TestClient(app) as client:
         project_id = client.post("/api/v1/projects/demo").json()["id"]
-        manifest = {"schema_version": "1.0", "external_run_id": "EXT-1", "kind": "board", "name": "board result", "metrics": {"latency_ms_p90": 20}}
+        manifest = {"schema_version": "1.0", "external_run_id": "EXT-1", "kind": "board", "name": "board result", "metrics": {"latency_ms_p90": 20}, "details": {"measurement_path": "/private/board/result.json", "operator_note": "fixture"}}
         first = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": manifest})
         second = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": manifest})
         changed = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": {**manifest, "metrics": {"latency_ms_p90": 21}}})
         assert first.json()["status"] == "created"
+        run_id = first.json()["run"]["id"]
+        assert client.get(f"/api/v1/projects/{project_id}/runs").json()[0]["details"]["measurement_path"] == "/private/board/result.json"
         assert second.json()["status"] == "existing"
         assert changed.status_code == 409
+        exported = client.get(f"/api/v1/projects/{project_id}/export").json()
+        exported_run = next(item for item in exported["runs"] if item["id"] == run_id)
+        assert "measurement_path" not in exported_run["details"]
 
 
 def test_target_profile_can_be_linked_to_board_import():
@@ -176,6 +182,8 @@ def test_classification_evaluation_api():
         })
         assert response.status_code == 201
         assert response.json()["result"]["top1_accuracy"] == 0.5
+        runs = client.get(f"/api/v1/projects/{project_id}/runs").json()
+        assert runs[0]["details"]["confusion_matrix"]["dog"]["cat"] == 1
 
 
 def test_empty_project_and_references_are_explicit_and_reversible():

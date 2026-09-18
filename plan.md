@@ -52,7 +52,7 @@ U0 신뢰성 보수 → U1 빈 프로젝트·범용 CRUD UI → U2 디렉터리�
 
 ## 단계별 구현
 
-1. Registry/API/CLI와 RTMDet·YOLOX metadata fixture. **부분 구현** — 공통 검증·artifact 보존·실모델 예제 필요.
+1. Registry/API/CLI와 RTMDet·YOLOX metadata fixture. **부분 구현** — 공통 검증·관리 artifact 디렉터리·실모델 예제 필요. 현재 등록 파일 hash와 prediction/result 상세 저장은 지원.
 2. COCO·YOLO·classification 경로 검사. **부분 구현** — 원본 hash·snapshot·label/split/evaluation/calibration 버전 관리 필요.
 3. 외부 prediction 평가와 ONNX profile adapter. **부분 구현** — dataset 전체 추론·상세 결과 저장·동일 조건 비교 강화 필요.
 4. runner·mock board·gate·report export. **부분 구현** — 독립 worker·복구·gate 정확성·공개 export 규격 보완 필요.
@@ -65,7 +65,7 @@ U0 신뢰성 보수 → U1 빈 프로젝트·범용 CRUD UI → U2 디렉터리�
 1. A / P0: 테스트 DB 격리, 참조·비교·gate 검증, 공개 export 보수, 공통 service와 migration.
 2. B / P1: DataAsset·Artifact·storage mapping, immutable dataset와 label/split/evaluation/calibration 버전 및 데이터 UI.
 3. C / P1: 외부 학습·모델·양자화의 typed lineage, alias 이력, Quantization Loss/Target Gap·matrix 화면.
-4. D / P1: dataset 전체 평가 Job, 예측/오류/per-class artifact, RTMDet·YOLOX 및 분류 예제·평가 UI.
+4. D / P1: dataset 전체 평가 Job, 오류/slice/리포트 artifact, RTMDet·YOLOX 및 분류 예제·평가 UI. 현재 외부 prediction 입력 hash와 per-class/confusion 상세는 Run에 저장.
 5. E / P1: 독립 worker, 보드 결과 계약, 다중 근거 Release gate·승인 UI.
 6. F / P1–P2: wizard·CLI·skill 도입, 백업/복구·Pages·최소 field feedback loop.
 7. G / P2: 환경이 정해진 vendor/live connector와 선택적 운영 확장.

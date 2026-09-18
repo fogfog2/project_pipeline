@@ -22,6 +22,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - classification prediction records 평가 UI와 detection COCO 평가 UI
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - 명시적 ONNX input/output profile을 요구하는 local CPU inference preview adapter
+- 평가 Run에 per-class/confusion/error 상세 결과와 evaluator scope를 보존하고 재조회하는 결과 provenance
 - 모델 등록 화면에서 ONNX/MMDeploy/MMDetection 형식·정밀도·profile을 선택하고 샘플 inference preview 실행
 - 선택 의존성 환경에서 MMDetection native config·checkpoint preview adapter
 - 선택 의존성 환경에서 MMDeploy runtime model directory preview adapter와 versioned target profile
@@ -34,7 +35,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - FastAPI `/api/v1`와 `visionops` CLI
 - React/Vite 한국어 UI 골격
 - MMDetection fixture와 RTMDet·YOLOX 온보딩 문서
-- 결과 export API와 GitHub Pages용 정적 snapshot 경로
+- 결과 export API와 GitHub Pages용 정적 snapshot 경로(artifact hash와 평가 상세 포함, 원본 경로 제외)
 - 기존 자료를 연결하는 `vision-lifecycle-onboard` agent skill
 
 ## 빠른 시작
@@ -88,6 +89,7 @@ visionops validate-coco /data/instances_val.json
 visionops create-project project.json
 visionops create-dataset PRJ-... dataset-version.json
 visionops create-model PRJ-... model-version.json
+visionops register-artifact PRJ-... artifact.json
 visionops export PRJ-... --output pages/snapshot.json
 visionops backup --output backups/registry.sqlite
 visionops restore --input backups/registry.sqlite
@@ -127,7 +129,7 @@ skill은 자료를 조사하고, 확인 가능한 lineage와 누락된 provenanc
 
 최신 제품 설계는 [빈 프로젝트에서 시작하는 실습형 Lifecycle 계획](docs/guided-lifecycle-plan.md)이다. 가이드 단계별 실제 연결·평가·변경 비교, 수정/보관, 디렉터리 연결과 작업 로그 UX를 포함한다. 이는 후속 개발 계획이며 현재 UI가 해당 흐름을 모두 제공하는 것은 아니다.
 
-원본 계획의 전체 시나리오는 아직 구현되지 않았다. 현재 코드에 근거한 지원 상태와 다음 개발 순서는 [Lifecycle 시나리오 점검 및 추가 개발 계획](docs/lifecycle-gap-analysis.md)을 기준으로 한다. 데이터 snapshot·label/split/calibration 버전, artifact 보존, 통합 평가·양자화 비교·Release 흐름이 남아 있다.
+원본 계획의 전체 시나리오는 아직 구현되지 않았다. 현재 코드에 근거한 지원 상태와 다음 개발 순서는 [Lifecycle 시나리오 점검 및 추가 개발 계획](docs/lifecycle-gap-analysis.md)을 기준으로 한다. 데이터 item-level snapshot/diff, 통합 ONNX batch 평가, 양자화 손실·target gap과 고급 Release evidence가 남아 있다.
 
 테스트는 프로세스별 임시 SQLite DB를 사용하며 기존 `.vision-lifecycle/registry.db`를 변경하지 않는다.
 

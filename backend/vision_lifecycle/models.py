@@ -175,6 +175,20 @@ class StepProgress(Base, Timestamped):
     evidence: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class Artifact(Base, Timestamped):
+    """A hashed file reference used by model/config/result provenance."""
+    __tablename__ = "artifacts"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ART"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(80), default="file")
+    logical_name: Mapped[str] = mapped_column(String(200))
+    source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(40), default="registered")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
 class ModelVersion(Base, Timestamped):
     __tablename__ = "model_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("MODEL"))
@@ -211,6 +225,7 @@ class Run(Base, Timestamped):
     import_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
     environment: Mapped[dict] = mapped_column(JSON, default=dict)
     notes: Mapped[str] = mapped_column(Text, default="")
 
