@@ -184,6 +184,10 @@ def main() -> None:
                 payload["validation"] = {**payload.get("validation", {}), "source_fingerprints": fingerprints}
             payload["content_hash"] = content_hash
             payload["snapshot"] = build_dataset_snapshot(task_kind=payload.get("task_kind", "detection"), format=payload.get("format", "coco"), manifest_path=payload.get("manifest_path"), annotation_path=payload.get("annotation_path"))
+            if not payload.get("class_names") and payload["snapshot"].get("class_names"):
+                payload["class_names"] = payload["snapshot"]["class_names"]
+            if not payload.get("sample_count") and payload["snapshot"].get("counts", {}).get("images"):
+                payload["sample_count"] = payload["snapshot"]["counts"]["images"]
             dataset = DatasetVersion(project_id=args.project_id, **payload)
             session.add(dataset); session.flush()
             if payload.get("annotation_path"):

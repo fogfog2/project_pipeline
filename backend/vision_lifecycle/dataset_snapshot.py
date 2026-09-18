@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import csv
 from pathlib import Path
 from typing import Any
 
@@ -30,10 +31,69 @@ def build_dataset_snapshot(*, task_kind: str, format: str, manifest_path: str | 
                 images = [{key: value for key, value in item.items() if key in {"id", "file_name", "width", "height", "license", "date_captured"}} for item in data.get("images", []) if isinstance(item, dict)]
                 annotations = [{key: value for key, value in item.items() if key in {"id", "image_id", "category_id", "bbox", "area", "iscrowd", "segmentation"}} for item in data.get("annotations", []) if isinstance(item, dict)]
                 snapshot["categories"] = _canonical_items(categories, "id")
+                snapshot["class_names"] = [str(item.get("name", item.get("id"))) for item in _canonical_items(categories, "id")]
                 snapshot["images"] = _canonical_items(images, "id")
                 snapshot["annotations"] = _canonical_items(annotations, "id")
                 snapshot["counts"] = {"categories": len(categories), "images": len(images), "annotations": len(annotations)}
         except (OSError, ValueError, json.JSONDecodeError):
+            snapshot["parse_status"] = "unavailable"
+    elif format.lower() in {"yolo", "yolo-txt"}:
+        root = Path(manifest_path or annotation_path or "").expanduser()
+        if root.is_dir():
+            images: list[dict[str, Any]] = []
+            annotations: list[dict[str, Any]] = []
+            class_ids: set[int] = set()
+            for image in sorted(path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"} and "images" in path.parts):
+                relative = image.relative_to(root).as_posix()
+                image_id = relative
+                images.append({"id": image_id, "file_name": relative})
+                parts = list(image.parts)
+                image_index = parts.index("images")
+                label_path = Path(*parts[:image_index], "labels", *parts[image_index + 1:]).with_suffix(".txt")
+                if not label_path.is_file():
+                    continue
+                for line_number, line in enumerate(label_path.read_text(encoding="utf-8").splitlines()):
+                    values = line.split()
+                    if len(values) != 5:
+                        continue
+                    try:
+                        class_id = int(values[0]); coordinates = [float(value) for value in values[1:]]
+                    except ValueError:
+                        continue
+                    class_ids.add(class_id)
+                    annotations.append({"id": f"{image_id}:{line_number}", "image_id": image_id, "category_id": class_id, "bbox": coordinates, "format": "yolo-normalized"})
+            snapshot["images"] = _canonical_items(images, "id")
+            snapshot["annotations"] = _canonical_items(annotations, "id")
+            snapshot["categories"] = [{"id": class_id, "name": str(class_id)} for class_id in sorted(class_ids)]
+            snapshot["class_names"] = [str(class_id) for class_id in sorted(class_ids)]
+            snapshot["counts"] = {"images": len(images), "annotations": len(annotations), "categories": len(class_ids)}
+        else:
+            snapshot["parse_status"] = "unavailable"
+    elif format.lower() in {"classification", "classification-folder"}:
+        root = Path(manifest_path or annotation_path or "").expanduser()
+        if root.is_dir():
+            images = []
+            class_names = []
+            for class_path in sorted(path for path in root.iterdir() if path.is_dir() and not path.name.startswith(".")):
+                class_names.append(class_path.name)
+                for image in sorted(path for path in class_path.rglob("*") if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}):
+                    relative = image.relative_to(root).as_posix()
+                    images.append({"id": relative, "file_name": relative, "label": class_path.name})
+            snapshot["images"] = _canonical_items(images, "id")
+            snapshot["class_names"] = class_names
+            snapshot["counts"] = {"images": len(images), "categories": len(class_names)}
+        else:
+            snapshot["parse_status"] = "unavailable"
+    elif format.lower() in {"classification-csv", "csv"} and manifest_path and Path(manifest_path).is_file():
+        try:
+            with Path(manifest_path).open(encoding="utf-8", newline="") as file:
+                rows = list(csv.DictReader(file))
+            images = [{"id": str(row.get("path", index)), "file_name": row.get("path", ""), "label": row.get("label", "")} for index, row in enumerate(rows)]
+            class_names = sorted({str(item["label"]) for item in images if item.get("label")})
+            snapshot["images"] = _canonical_items(images, "id")
+            snapshot["class_names"] = class_names
+            snapshot["counts"] = {"images": len(images), "categories": len(class_names)}
+        except (OSError, csv.Error):
             snapshot["parse_status"] = "unavailable"
     return snapshot
 

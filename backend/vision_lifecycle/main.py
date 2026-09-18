@@ -298,7 +298,12 @@ def create_dataset(project_id: str, payload: DatasetCreate, session: Session = D
     content_hash, fingerprints = dataset_fingerprint(payload.manifest_path, payload.annotation_path)
     validation = {**payload.validation, "source_fingerprints": fingerprints} if fingerprints else payload.validation
     snapshot = build_dataset_snapshot(task_kind=payload.task_kind, format=payload.format, manifest_path=payload.manifest_path, annotation_path=payload.annotation_path)
-    dataset = DatasetVersion(project_id=project_id, **payload.model_dump(exclude={"validation"}), content_hash=content_hash, snapshot=snapshot, validation=validation)
+    values = payload.model_dump(exclude={"validation"})
+    if not values.get("class_names") and snapshot.get("class_names"):
+        values["class_names"] = snapshot["class_names"]
+    if not values.get("sample_count") and snapshot.get("counts", {}).get("images"):
+        values["sample_count"] = snapshot["counts"]["images"]
+    dataset = DatasetVersion(project_id=project_id, **values, content_hash=content_hash, snapshot=snapshot, validation=validation)
     session.add(dataset); session.flush()
     if payload.annotation_path:
         register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{payload.name}/{payload.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=payload.annotation_path)
@@ -324,6 +329,10 @@ def update_dataset(project_id: str, dataset_id: str, payload: DatasetUpdate, ses
     if "annotation_path" in values or "manifest_path" in values:
         dataset.content_hash, fingerprints = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
         dataset.snapshot = build_dataset_snapshot(task_kind=dataset.task_kind, format=dataset.format, manifest_path=dataset.manifest_path, annotation_path=dataset.annotation_path)
+        if not dataset.class_names and dataset.snapshot.get("class_names"):
+            dataset.class_names = dataset.snapshot["class_names"]
+        if not dataset.sample_count and dataset.snapshot.get("counts", {}).get("images"):
+            dataset.sample_count = dataset.snapshot["counts"]["images"]
         dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints}
         if "annotation_path" in values and dataset.annotation_path:
             register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=dataset.annotation_path)

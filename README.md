@@ -10,6 +10,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 읽기 전용 Storage mapping 등록·재검사·root 내부 탐색, bounded file inventory와 annotation/manifest fingerprint 변경 감지
 - Storage mapping의 root 수정과 원본 삭제 없는 보관/복원, 보관 중 browse·inventory 실행 차단
 - DatasetVersion별 canonical snapshot, parent version 연결, COCO category/image/annotation diff 조회
+- YOLO TXT 디렉터리와 classification folder/CSV도 image·label·annotation snapshot과 content hash로 등록
 - SplitVersion 검증에서 item 중복·알 수 없는 item·group 누수를 검사하고 `require_complete` 분할 미할당을 표시
 - COCO annotation validation과 external prediction JSON의 onboarding AP50 또는 공식 COCO AP@[.50:.95] 평가
 - 분류 prediction record 기반 Top-1/Top-K·macro F1·confusion matrix 평가

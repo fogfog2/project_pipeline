@@ -2,6 +2,7 @@ from pathlib import Path
 
 from vision_lifecycle.adapters.coco import validate_coco
 from vision_lifecycle.adapters.yolo import validate_yolo_directory
+from vision_lifecycle.dataset_snapshot import build_dataset_snapshot
 
 
 def test_coco_fixture_has_non_contiguous_categories():
@@ -17,3 +18,24 @@ def test_yolo_missing_label_is_reported(tmp_path: Path):
     result = validate_yolo_directory(str(tmp_path))
     assert result["missing_label_files"] == ["images/train/one.jpg"]
     assert result["status"] == "passed"
+
+
+def test_yolo_and_classification_snapshots_are_portable(tmp_path: Path):
+    from PIL import Image
+
+    yolo = tmp_path / "yolo"
+    (yolo / "images" / "train").mkdir(parents=True)
+    (yolo / "labels" / "train").mkdir(parents=True)
+    Image.new("RGB", (4, 3), (1, 2, 3)).save(yolo / "images" / "train" / "one.png")
+    (yolo / "labels" / "train" / "one.txt").write_text("2 0.5 0.5 0.5 0.5\n", encoding="utf-8")
+    yolo_snapshot = build_dataset_snapshot(task_kind="detection", format="yolo-txt", manifest_path=str(yolo), annotation_path=None)
+    assert yolo_snapshot["counts"] == {"images": 1, "annotations": 1, "categories": 1}
+    assert yolo_snapshot["images"][0]["id"] == "images/train/one.png"
+    assert yolo_snapshot["annotations"][0]["category_id"] == 2
+
+    classification = tmp_path / "classification"
+    (classification / "cat").mkdir(parents=True)
+    Image.new("RGB", (2, 2), (4, 5, 6)).save(classification / "cat" / "one.png")
+    classification_snapshot = build_dataset_snapshot(task_kind="classification", format="classification-folder", manifest_path=str(classification), annotation_path=None)
+    assert classification_snapshot["class_names"] == ["cat"]
+    assert classification_snapshot["images"][0]["label"] == "cat"
