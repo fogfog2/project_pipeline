@@ -236,6 +236,7 @@ class ReleaseCreate(BaseModel):
     baseline_model_id: str | None = None
     gate_config: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class InferencePreviewRequest(BaseModel):

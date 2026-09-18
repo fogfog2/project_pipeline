@@ -28,6 +28,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - classification prediction records 평가 UI와 detection COCO 평가 UI
 - 검출 평가에서 invalid bbox/image/class/score를 성공 지표와 분리하고 최대 50건의 오류 이유를 보존
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
+- Release 생성 시 evaluation/board/quantization/artifact evidence를 snapshot·content hash로 고정하고 필수 evidence 누락을 INCOMPLETE으로 표시
 - regression gate는 baseline의 dataset·evaluator·protocol·scope·class mapping 계약이 맞을 때만 비교하며, 근거가 없으면 INCOMPLETE
 - 명시적 ONNX input/output profile을 요구하는 local CPU inference preview adapter
 - ONNX image record manifest 기반 batch 평가: classification Top-K/혼동행렬, COCO detection AP, 입력 manifest artifact 보존

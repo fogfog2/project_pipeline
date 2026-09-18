@@ -303,3 +303,16 @@ class Release(Base, Timestamped):
     gate_result: Mapped[dict] = mapped_column(JSON, default=dict)
     decision: Mapped[str] = mapped_column(String(50), default="NOT_CONFIGURED")
     notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class ReleaseEvidence(Base, Timestamped):
+    __tablename__ = "release_evidence"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("EVID"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    release_id: Mapped[str] = mapped_column(ForeignKey("releases.id"), index=True)
+    evidence_type: Mapped[str] = mapped_column(String(50))
+    source_id: Mapped[str] = mapped_column(String(40))
+    required: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[str] = mapped_column(String(40), default="captured")
+    content_hash: Mapped[str] = mapped_column(String(128))
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)

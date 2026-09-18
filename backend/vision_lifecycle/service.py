@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, Project, QuantizationRun, Release, Run, SplitVersion, StorageMapping, TargetProfile
+from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, Project, QuantizationRun, Release, ReleaseEvidence, Run, SplitVersion, StorageMapping, TargetProfile
 from .dataset_snapshot import build_dataset_snapshot
 
 
@@ -158,6 +158,8 @@ def lineage(session: Session, project_id: str) -> dict:
     boards = session.scalars(select(BoardBenchmark).where(BoardBenchmark.project_id == project_id)).all()
     artifacts = session.scalars(select(Artifact).where(Artifact.project_id == project_id)).all()
     releases = session.scalars(select(Release).where(Release.project_id == project_id)).all()
+    release_ids = [item.id for item in releases]
+    evidences = session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id)).all()
     targets = session.scalars(select(TargetProfile).where(TargetProfile.project_id == project_id)).all()
     nodes = [{"id": project.id, "kind": "project", "label": project.name}]
     nodes += [{"id": item.id, "kind": "dataset", "label": f"{item.name} {item.version}", "status": item.status} for item in datasets]
@@ -167,6 +169,7 @@ def lineage(session: Session, project_id: str) -> dict:
     nodes += [{"id": item.id, "kind": "board", "label": item.name, "status": item.status} for item in boards]
     nodes += [{"id": item.id, "kind": "target", "label": f"{item.name} {item.version}"} for item in targets]
     nodes += [{"id": item.id, "kind": "release", "label": item.name, "status": item.decision} for item in releases]
+    nodes += [{"id": item.id, "kind": "release-evidence", "label": f"{item.evidence_type}: {item.source_id}", "status": item.status} for item in evidences]
     nodes += [{"id": item.id, "kind": "artifact", "label": item.logical_name, "status": item.status} for item in artifacts]
     edges = []
     for dataset in datasets:
@@ -199,6 +202,9 @@ def lineage(session: Session, project_id: str) -> dict:
             edges.append({"source": release.evaluation_run_id, "target": release.id, "relation": "evidence"})
         if release.baseline_model_id:
             edges.append({"source": release.baseline_model_id, "target": release.id, "relation": "baseline"})
+    for evidence in evidences:
+        if evidence.release_id in release_ids:
+            edges.append({"source": evidence.id, "target": evidence.release_id, "relation": "evidence"})
     for artifact in artifacts:
         owner_id = artifact.owner_id or project.id
         if artifact.owner_id:
@@ -281,6 +287,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "board_benchmarks": [safe(x) for x in session.scalars(select(BoardBenchmark).where(BoardBenchmark.project_id == project_id)).all()],
         "targets": [safe(x) for x in session.scalars(select(TargetProfile).where(TargetProfile.project_id == project_id)).all()],
         "releases": [safe(x) for x in session.scalars(select(Release).where(Release.project_id == project_id)).all()],
+        "release_evidence": [safe(x) for x in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id)).all()],
         "redactions": ["storage_root", "root_path", "source_path", "managed_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"],
     }
 

@@ -9,6 +9,7 @@ class GateConfigError(ValueError):
 
 
 _SECTIONS = {"minimum", "maximum", "max_regression", "direction"}
+_METADATA_KEYS = {"required_evidence"}
 _LOWER_IS_BETTER_PREFIXES = ("latency", "memory", "model_size", "power", "temperature", "startup", "failure", "error")
 
 
@@ -21,9 +22,11 @@ def _number(value: Any, name: str) -> float:
 def _validate_config(config: dict[str, Any]) -> dict[str, dict[str, float]]:
     if not isinstance(config, dict):
         raise GateConfigError("Gate config must be an object")
-    unknown = set(config) - _SECTIONS
+    unknown = set(config) - _SECTIONS - _METADATA_KEYS
     if unknown:
         raise GateConfigError(f"Unsupported gate sections: {', '.join(sorted(unknown))}")
+    if "required_evidence" in config and (not isinstance(config["required_evidence"], list) or any(not isinstance(value, str) for value in config["required_evidence"])):
+        raise GateConfigError("required_evidence must be a list of strings")
     rules: dict[str, dict[str, float]] = {}
     for section in ("minimum", "maximum", "max_regression"):
         values = config.get(section, {})

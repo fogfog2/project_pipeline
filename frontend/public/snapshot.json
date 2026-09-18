@@ -11,5 +11,6 @@
     {"id": "TARGET-DEMO", "name": "Example target", "version": "demo", "target_kind": "board", "runtime": "TensorRT", "hardware": {"note": "example only"}, "notes": "Static demo data"}
   ],
   "runs": [{"id": "RUN-YOLOX", "kind": "evaluation", "name": "YOLOX-s COCO8 evaluation", "status": "completed", "metrics": {"bbox_mAP": 0.398, "latency_ms_p50": 14.3}, "details": {"metric_scope": "reference fixture", "per_class": {"person": {"bbox_AP50": 0.41}}}}, {"id": "RUN-RTMDET", "kind": "evaluation", "name": "RTMDet-tiny COCO8 evaluation", "status": "completed", "metrics": {"bbox_mAP": 0.412, "latency_ms_p50": 11.8}, "details": {"metric_scope": "reference fixture", "per_class": {"person": {"bbox_AP50": 0.43}}}}],
-  "artifacts": [{"id": "ART-RTMDET-CONFIG", "kind": "config", "logical_name": "RTMDet/tiny-coco-demo/config", "size_bytes": 0, "sha256": "example-config-sha256", "status": "reference"}, {"id": "ART-YOLOX-CONFIG", "kind": "config", "logical_name": "YOLOX/s-coco-demo/config", "size_bytes": 0, "sha256": "example-config-sha256", "status": "reference"}]
+  "artifacts": [{"id": "ART-RTMDET-CONFIG", "kind": "config", "logical_name": "RTMDet/tiny-coco-demo/config", "size_bytes": 0, "sha256": "example-config-sha256", "status": "reference"}, {"id": "ART-YOLOX-CONFIG", "kind": "config", "logical_name": "YOLOX/s-coco-demo/config", "size_bytes": 0, "sha256": "example-config-sha256", "status": "reference"}],
+  "release_evidence": []
 }

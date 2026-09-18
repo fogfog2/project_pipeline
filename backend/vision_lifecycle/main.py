@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import hashlib
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -21,7 +22,7 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
+from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
@@ -499,7 +500,45 @@ def create_inventory_job(project_id: str, storage_id: str, payload: StorageInven
 
 
 def _version_hash(value: dict) -> str:
-    return "sha256:" + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return "sha256:" + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _evidence_safe(value):
+    if isinstance(value, dict):
+        result = {}
+        for key, nested in value.items():
+            lowered = str(key).lower()
+            if any(token in lowered for token in ("path", "command", "secret", "token", "password", "credential")):
+                continue
+            result[key] = _evidence_safe(nested)
+        return result
+    if isinstance(value, list):
+        return [_evidence_safe(item) for item in value]
+    if isinstance(value, str) and value.startswith("/"):
+        return "[redacted-absolute-path]"
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _capture_release_evidence(session: Session, project_id: str, release_id: str, item: dict) -> ReleaseEvidence:
+    evidence_type = str(item.get("type", item.get("evidence_type", ""))).lower()
+    source_id = str(item.get("id", item.get("source_id", "")))
+    required = bool(item.get("required", False))
+    entities = {"evaluation": Run, "run": Run, "board": BoardBenchmark, "benchmark": BoardBenchmark, "quantization": QuantizationRun, "artifact": Artifact}
+    entity_type = entities.get(evidence_type)
+    if not entity_type or not source_id:
+        raise HTTPException(422, "Release evidence needs type (evaluation, board, quantization, artifact) and source id")
+    entity = session.get(entity_type, source_id)
+    if not entity or entity.project_id != project_id:
+        raise HTTPException(422, f"Release evidence {evidence_type}:{source_id} must belong to this project")
+    if evidence_type in {"evaluation", "run"} and entity.kind != "evaluation":
+        raise HTTPException(422, "Release evaluation evidence must reference an evaluation Run")
+    if evidence_type in {"board", "benchmark"} and not isinstance(entity, BoardBenchmark):
+        raise HTTPException(422, "Release board evidence must reference a BoardBenchmark")
+    normalized_type = {"run": "evaluation", "benchmark": "board"}.get(evidence_type, evidence_type)
+    snapshot = _evidence_safe({"type": normalized_type, "source_id": source_id, "entity": as_dict(entity)})
+    return ReleaseEvidence(project_id=project_id, release_id=release_id, evidence_type=normalized_type, source_id=source_id, required=required, status="captured", content_hash=_version_hash(snapshot), snapshot=snapshot)
 
 
 @app.get("/api/v1/projects/{project_id}/artifacts")
@@ -1172,10 +1211,39 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
     if payload.baseline_model_id and baseline_compatibility["status"] != "compatible" and payload.gate_config.get("max_regression"):
         result["status"] = "INCOMPLETE"
         result["reason"] = baseline_compatibility["reason"]
+    captured_evidence: list[ReleaseEvidence] = []
+    try:
+        for evidence in payload.evidence:
+            captured_evidence.append(_capture_release_evidence(session, project_id, "pending", evidence))
+    except HTTPException:
+        raise
+    required_types = {str(value) for value in payload.gate_config.get("required_evidence", []) if isinstance(value, str)}
+    captured_types = {item.evidence_type for item in captured_evidence}
+    missing_evidence = sorted(required_types - captured_types)
+    if missing_evidence:
+        result["status"] = "INCOMPLETE"
+        result["reason"] = f"필수 Release evidence가 없습니다: {', '.join(missing_evidence)}"
+    result["evidence"] = {"captured": sorted(captured_types), "missing_required": missing_evidence}
     result["baseline_compatibility"] = baseline_compatibility
-    release = Release(project_id=project_id, **payload.model_dump(), gate_result=result, decision=result["status"])
-    session.add(release); session.commit(); session.refresh(release)
-    return as_dict(release)
+    values = payload.model_dump(exclude={"evidence"})
+    release = Release(project_id=project_id, **values, gate_result=result, decision=result["status"])
+    session.add(release); session.flush()
+    for evidence in captured_evidence:
+        evidence.release_id = release.id
+        session.add(evidence)
+    session.commit(); session.refresh(release)
+    response = as_dict(release)
+    response["evidence"] = [as_dict(item) for item in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.release_id == release.id)).all()]
+    return response
+
+
+@app.get("/api/v1/projects/{project_id}/releases/{release_id}/evidence")
+def list_release_evidence(project_id: str, release_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    release = session.get(Release, release_id)
+    if not release or release.project_id != project_id:
+        raise HTTPException(404, "Release not found")
+    return [as_dict(item) for item in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id, ReleaseEvidence.release_id == release_id).order_by(ReleaseEvidence.created_at)).all()]
 
 
 @app.get("/api/v1/projects/{project_id}/export")

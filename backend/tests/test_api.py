@@ -254,6 +254,38 @@ def test_release_requires_compatible_baseline_for_regression_gate():
         assert release.json()["gate_result"]["baseline_compatibility"]["status"] == "incomplete"
 
 
+def test_release_captures_immutable_evidence_snapshots_and_required_types():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "release-evidence"}).json()["id"]
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "fixture"}).json()
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "eval", "version": "v1"}).json()
+        run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "candidate eval", "dataset_id": dataset["id"], "model_id": model["id"], "config": {"evaluator_version": "eval-v1"}, "metrics": {"bbox_AP50": 0.7}}).json()
+        release = client.post(f"/api/v1/projects/{project_id}/releases", json={
+            "name": "release-with-evidence", "model_id": model["id"], "evaluation_run_id": run["id"],
+            "gate_config": {"minimum": {"bbox_AP50": 0.5}}, "evidence": [{"type": "evaluation", "id": run["id"], "required": True}],
+        })
+        assert release.status_code == 201 and release.json()["decision"] == "PASS"
+        evidence = client.get(f"/api/v1/projects/{project_id}/releases/{release.json()['id']}/evidence")
+        assert evidence.status_code == 200 and evidence.json()[0]["snapshot"]["entity"]["metrics"]["bbox_AP50"] == 0.7
+        from vision_lifecycle.database import SessionLocal
+        from vision_lifecycle.models import Run
+        with SessionLocal() as session:
+            stored_run = session.get(Run, run["id"])
+            stored_run.metrics = {"bbox_AP50": 0.1}
+            session.commit()
+        unchanged = client.get(f"/api/v1/projects/{project_id}/releases/{release.json()['id']}/evidence").json()[0]
+        assert unchanged["snapshot"]["entity"]["metrics"]["bbox_AP50"] == 0.7
+        incomplete = client.post(f"/api/v1/projects/{project_id}/releases", json={
+            "name": "release-missing-board", "model_id": model["id"], "evaluation_run_id": run["id"],
+            "gate_config": {"minimum": {"bbox_AP50": 0.0}, "required_evidence": ["evaluation", "board"]},
+            "evidence": [{"type": "evaluation", "id": run["id"]}],
+        })
+        assert incomplete.status_code == 201 and incomplete.json()["decision"] == "INCOMPLETE"
+        assert "board" in incomplete.json()["gate_result"]["evidence"]["missing_required"]
+
+
 def test_empty_project_and_references_are_explicit_and_reversible():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
