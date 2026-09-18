@@ -20,6 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate Pages snapshot from fixture registry
+        env:
+          VISION_LIFECYCLE_DB: ${{ runner.temp }}/vision-lifecycle-pages.db
+        run: |
+          python -m pip install --disable-pip-version-check -e .
+          visionops demo > "$RUNNER_TEMP/demo-project.json"
+          PROJECT_ID=$(python -c 'import json, pathlib; print(json.loads(pathlib.Path("'"$RUNNER_TEMP"'/demo-project.json").read_text())["id"])')
+          visionops export "$PROJECT_ID" --output frontend/public/snapshot.json
       - uses: actions/setup-node@v4
         with:
           node-version: 20

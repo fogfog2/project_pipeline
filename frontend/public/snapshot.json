@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "generated_at": "2026-09-18T00:00:00Z",
   "project": {"id": "PRJ-DEMO", "name": "MMDetection RTMDet · YOLOX Demo", "description": "GitHub Pages 정적 예제", "task_kind": "detection"},
   "overview": {"counts": {"datasets": 1, "models": 2, "runs": 2, "jobs": 0}, "lineage_completeness": 100, "baseline": {"id": "MODEL-YOLOX", "family": "YOLOX-s", "version": "s-coco-demo"}, "candidate": {"id": "MODEL-RTMDET", "family": "RTMDet-tiny", "version": "tiny-coco-demo"}, "recent_runs": [], "next_actions": ["정적 Pages는 내보낸 결과만 조회합니다."]},

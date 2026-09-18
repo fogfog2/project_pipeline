@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -232,8 +234,17 @@ def safe_export(session: Session, project_id: str) -> dict:
             data["snapshot"] = scrub(data["snapshot"])
         return data
 
+    summary = overview(session, project_id)
+    overview_export = {
+        "counts": summary["counts"],
+        "lineage_completeness": summary["lineage_completeness"],
+        "baseline": safe(summary["baseline"]) if summary["baseline"] else None,
+        "candidate": safe(summary["candidate"]) if summary["candidate"] else None,
+        "recent_runs": [safe(item) for item in summary["recent_runs"]],
+        "next_actions": summary["next_actions"],
+    }
     return {
-        "schema_version": "1.0", "project": safe(project),
+        "schema_version": "1.1", "generated_at": datetime.now(UTC).isoformat(), "project": safe(project), "overview": overview_export,
         "datasets": [safe(x) for x in session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()],
         "models": [safe(x) for x in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()],
         "runs": [safe(x) for x in session.scalars(select(Run).where(Run.project_id == project_id)).all()],

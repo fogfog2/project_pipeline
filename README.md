@@ -43,7 +43,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - FastAPI `/api/v1`와 `visionops` CLI
 - React/Vite 한국어 UI 골격
 - MMDetection fixture와 RTMDet·YOLOX 온보딩 문서
-- 결과 export API와 GitHub Pages용 정적 snapshot 경로(artifact hash와 평가 상세 포함, 원본 경로 제외)
+- 결과 export API와 GitHub Pages용 정적 snapshot 경로(생성 시각·overview·artifact hash·평가 상세 포함, 원본 경로 제외)
 - 기존 자료를 연결하는 `vision-lifecycle-onboard` agent skill
 
 ## 빠른 시작
@@ -84,6 +84,8 @@ npm run dev
 API를 8001번으로 실행한 경우에는 `VITE_API_PORT=8001 npm run dev`를 사용한다.
 
 브라우저에서 `http://127.0.0.1:5173`를 열고 **빈 프로젝트 만들기** 또는 **MMDetection · YOLOX 실습 시작(빈 상태)**을 선택한다. 먼저 **연결·설정**에서 이미지·annotation·모델이 있는 서버/NAS root를 Storage mapping으로 등록·검사한 뒤, 데이터와 모델을 단계별로 연결한다. API 문서는 `http://127.0.0.1:8000/docs`에서 확인한다.
+
+GitHub Pages는 Actions의 `workflow_dispatch`로 배포한다. workflow는 fixture registry를 임시 SQLite에 만들고 `visionops export`로 Pages-safe `snapshot.json`을 생성한 뒤 정적 UI를 빌드한다. 실제 프로젝트 결과를 게시할 때는 로컬에서 검토한 export를 `frontend/public/snapshot.json`에 넣어 선택한 공개 데이터만 포함한다.
 
 Storage mapping은 서버가 접근할 수 있는 경로를 등록하는 기능이다. 브라우저에서 고른 로컬 파일을 자동 업로드하지 않으며, 등록·검사만으로 외부 명령을 실행하지 않는다. Dataset 초안에 연결한 annotation/manifest의 내용이 바뀌면 prediction 평가를 중단하므로 새 버전을 만든 뒤 다시 확정한다.
 
