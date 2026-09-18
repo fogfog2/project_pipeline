@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sqlite3
 from pathlib import Path
 
 from sqlalchemy import select
 
 from .adapters.coco import validate_coco
 from .adapters.inspect import inspect_path
-from .database import SessionLocal, init_database
+from .database import SessionLocal, engine, init_database
 from .models import DatasetVersion, ModelVersion, Project
 from .runner import run_worker
 from .serializers import as_dict
@@ -51,6 +53,10 @@ def main() -> None:
     worker = sub.add_parser("worker", help="Run the external job worker")
     worker.add_argument("--once", action="store_true", help="Claim at most one queued job and exit")
     worker.add_argument("--poll-seconds", type=float, default=1.0)
+    backup = sub.add_parser("backup", help="Create a SQLite registry backup")
+    backup.add_argument("--output", required=True, help="Destination SQLite file")
+    restore = sub.add_parser("restore", help="Restore the local registry from a SQLite backup")
+    restore.add_argument("--input", required=True, help="Source SQLite backup file")
     args = parser.parse_args()
 
     init_database()
@@ -60,6 +66,27 @@ def main() -> None:
         _json(validate_coco(args.annotation_path)); return
     if args.command == "worker":
         run_worker(poll_seconds=args.poll_seconds, once=args.once); return
+    db_path = Path(os.environ.get("VISION_LIFECYCLE_DB", ".vision-lifecycle/registry.db"))
+    if args.command == "backup":
+        output = Path(args.output); output.parent.mkdir(parents=True, exist_ok=True)
+        source = sqlite3.connect(str(db_path)); destination = sqlite3.connect(str(output))
+        try:
+            source.backup(destination)
+        finally:
+            destination.close(); source.close()
+        print(f"Wrote registry backup: {output}"); return
+    if args.command == "restore":
+        source_path = Path(args.input)
+        if not source_path.is_file():
+            raise ValueError(f"Backup file does not exist: {source_path}")
+        engine.dispose(); db_path.parent.mkdir(parents=True, exist_ok=True)
+        source = sqlite3.connect(str(source_path)); destination = sqlite3.connect(str(db_path))
+        try:
+            source.backup(destination)
+        finally:
+            destination.close(); source.close()
+        init_database()
+        print(f"Restored registry backup: {source_path}"); return
     with SessionLocal() as session:
         if args.command == "init":
             print("Registry initialized at .vision-lifecycle/registry.db")

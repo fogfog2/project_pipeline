@@ -53,6 +53,12 @@ class StorageMappingCreate(BaseModel):
     notes: str = ""
 
 
+class StorageMappingUpdate(BaseModel):
+    root_path: str | None = None
+    read_only: bool | None = None
+    notes: str | None = None
+
+
 class StorageBrowseRequest(BaseModel):
     relative_path: str = ""
     limit: int = Field(default=200, ge=1, le=500)

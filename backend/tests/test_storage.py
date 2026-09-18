@@ -32,6 +32,11 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         inventory = client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/inventory", json={}).json()
         assert inventory["count"] >= 1
         assert client.get(f"/api/v1/projects/{project_id}/assets").json()[0]["sha256"]
+        remapped_root = tmp_path / "remapped"
+        remapped_root.mkdir()
+        remapped = client.patch(f"/api/v1/projects/{project_id}/storages/{mapping['id']}", json={"root_path": str(remapped_root)})
+        assert remapped.status_code == 200
+        assert remapped.json()["id"] == mapping["id"]
         dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "coco", "version": "v1", "annotation_path": str(annotation)}).json()
         assert dataset["content_hash"].startswith("sha256:")
         preview = client.get(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/preview").json()

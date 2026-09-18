@@ -84,9 +84,13 @@ visionops create-project project.json
 visionops create-dataset PRJ-... dataset-version.json
 visionops create-model PRJ-... model-version.json
 visionops export PRJ-... --output pages/snapshot.json
+visionops backup --output backups/registry.sqlite
+visionops restore --input backups/registry.sqlite
 ```
 
 `export` 결과는 API export와 같은 redaction 규칙을 사용한다. 원본·annotation·checkpoint의 절대 경로, 명령과 환경변수 이름은 포함하지 않는다.
+
+`backup`/`restore`는 로컬 SQLite registry의 ID와 lineage를 보존하는 운영 백업이다. Pages 공개용 결과를 만들 때는 `export`를 사용하며, backup 파일에는 로컬 경로와 설정이 포함될 수 있으므로 공개 저장소에 올리지 않는다.
 
 ## RTMDet·YOLOX 사용 흐름
 

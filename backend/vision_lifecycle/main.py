@@ -24,7 +24,7 @@ from .importer import manifest_hash, validate_result_manifest
 from .models import BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, overview, safe_export, seed_demo
 from .fingerprints import dataset_fingerprint, file_sha256
@@ -261,6 +261,23 @@ def create_storage(project_id: str, payload: StorageMappingCreate, session: Sess
     validation = storage_status(payload.root_path)
     mapping = StorageMapping(project_id=project_id, **payload.model_dump(), status=validation["status"], last_validation=validation)
     session.add(mapping); session.commit(); session.refresh(mapping)
+    return as_dict(mapping)
+
+
+@app.patch("/api/v1/projects/{project_id}/storages/{storage_id}")
+def update_storage(project_id: str, storage_id: str, payload: StorageMappingUpdate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    mapping = session.get(StorageMapping, storage_id)
+    if not mapping or mapping.project_id != project_id:
+        raise HTTPException(404, "Storage mapping not found")
+    values = payload.model_dump(exclude_unset=True)
+    for key, value in values.items():
+        setattr(mapping, key, value)
+    if "root_path" in values:
+        validation = storage_status(mapping.root_path)
+        mapping.status = validation["status"]
+        mapping.last_validation = validation
+    session.commit(); session.refresh(mapping)
     return as_dict(mapping)
 
 
