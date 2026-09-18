@@ -30,6 +30,10 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         assert client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/browse", json={}).status_code == 200
         dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "coco", "version": "v1", "annotation_path": str(annotation)}).json()
         assert dataset["content_hash"].startswith("sha256:")
+        finalized = client.post(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/finalize")
+        assert finalized.status_code == 200
+        assert finalized.json()["status"] == "finalized"
+        assert client.post(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/finalize").status_code == 409
         model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "detector", "version": "v1", "family": "fixture", "source_dataset_id": dataset["id"]}).json()
         annotation.write_text(annotation.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         response = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={

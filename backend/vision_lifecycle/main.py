@@ -191,6 +191,8 @@ def finalize_dataset(project_id: str, dataset_id: str, session: Session = Depend
         raise HTTPException(404, "Dataset not found")
     if dataset.status == "archived":
         raise HTTPException(409, "Restore the DatasetVersion before finalizing")
+    if dataset.status == "finalized":
+        raise HTTPException(409, "DatasetVersion is already finalized; create a new version for changes")
     content_hash, fingerprints = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
     if not content_hash:
         raise HTTPException(422, "Finalize requires at least one accessible manifest or annotation file")
