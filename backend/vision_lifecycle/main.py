@@ -29,6 +29,7 @@ from .serializers import as_dict
 from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
 from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
+from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 
 
@@ -247,9 +248,14 @@ def create_dataset(project_id: str, payload: DatasetCreate, session: Session = D
     duplicate = session.scalar(select(DatasetVersion).where(DatasetVersion.project_id == project_id, DatasetVersion.name == payload.name, DatasetVersion.version == payload.version))
     if duplicate:
         raise HTTPException(409, "This DatasetVersion already exists in the project")
+    if payload.parent_dataset_id:
+        parent = session.get(DatasetVersion, payload.parent_dataset_id)
+        if not parent or parent.project_id != project_id:
+            raise HTTPException(422, "Parent DatasetVersion must belong to this project")
     content_hash, fingerprints = dataset_fingerprint(payload.manifest_path, payload.annotation_path)
     validation = {**payload.validation, "source_fingerprints": fingerprints} if fingerprints else payload.validation
-    dataset = DatasetVersion(project_id=project_id, **payload.model_dump(exclude={"validation"}), content_hash=content_hash, validation=validation)
+    snapshot = build_dataset_snapshot(task_kind=payload.task_kind, format=payload.format, manifest_path=payload.manifest_path, annotation_path=payload.annotation_path)
+    dataset = DatasetVersion(project_id=project_id, **payload.model_dump(exclude={"validation"}), content_hash=content_hash, snapshot=snapshot, validation=validation)
     session.add(dataset); session.flush()
     if payload.annotation_path:
         register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{payload.name}/{payload.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=payload.annotation_path)
@@ -272,6 +278,7 @@ def update_dataset(project_id: str, dataset_id: str, payload: DatasetUpdate, ses
         setattr(dataset, key, value)
     if "annotation_path" in values or "manifest_path" in values:
         dataset.content_hash, fingerprints = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
+        dataset.snapshot = build_dataset_snapshot(task_kind=dataset.task_kind, format=dataset.format, manifest_path=dataset.manifest_path, annotation_path=dataset.annotation_path)
         dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints}
         if "annotation_path" in values and dataset.annotation_path:
             register_artifact(session, project_id, kind="dataset-annotation", logical_name=f"{dataset.name}/{dataset.version}/annotation", owner_type="dataset", owner_id=dataset.id, source_path=dataset.annotation_path)
@@ -306,6 +313,7 @@ def finalize_dataset(project_id: str, dataset_id: str, session: Session = Depend
     if not content_hash:
         raise HTTPException(422, "Finalize requires at least one accessible manifest or annotation file")
     dataset.content_hash = content_hash
+    dataset.snapshot = build_dataset_snapshot(task_kind=dataset.task_kind, format=dataset.format, manifest_path=dataset.manifest_path, annotation_path=dataset.annotation_path)
     dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints, "finalized_at": "local"}
     dataset.status = "finalized"
     session.commit(); session.refresh(dataset)
@@ -332,6 +340,16 @@ def preview_dataset(project_id: str, dataset_id: str, limit: int = 12, session: 
         by_image.setdefault(annotation["image_id"], []).append({"id": annotation.get("id"), "category_id": annotation.get("category_id"), "category_name": categories.get(annotation.get("category_id"), "unknown"), "bbox": annotation.get("bbox"), "iscrowd": annotation.get("iscrowd", 0)})
     images = [{"id": image.get("id"), "file_name": image.get("file_name"), "width": image.get("width"), "height": image.get("height"), "annotations": by_image.get(image.get("id"), [])} for image in source["images"][:limit]]
     return {"dataset_id": dataset.id, "categories": categories, "images": images, "truncated": len(source["images"]) > limit}
+
+
+@app.get("/api/v1/projects/{project_id}/datasets/{dataset_id}/diff")
+def diff_dataset(project_id: str, dataset_id: str, against_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    left = session.get(DatasetVersion, dataset_id)
+    right = session.get(DatasetVersion, against_id)
+    if not left or left.project_id != project_id or not right or right.project_id != project_id:
+        raise HTTPException(404, "DatasetVersion not found")
+    return {"left": as_dict(left), "right": as_dict(right), "diff": diff_dataset_snapshots(left.snapshot or {}, right.snapshot or {})}
 
 
 @app.post("/api/v1/projects/{project_id}/datasets/validate-coco")

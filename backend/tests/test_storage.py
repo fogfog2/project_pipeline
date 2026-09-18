@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from time import sleep
 
@@ -85,3 +86,22 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         # intentionally absent from a Pages-safe snapshot.
         assert str(tmp_path) not in exported.text
         assert all("source_path" not in item for item in exported.json()["artifacts"])
+
+
+def test_dataset_snapshot_and_diff(tmp_path: Path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    annotation = tmp_path / "snapshot.json"
+    annotation.write_text(Path("examples/mmdetection/annotations/coco8.json").read_text(encoding="utf-8"), encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "snapshot-project"}).json()["id"]
+        first = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "coco", "version": "v1", "annotation_path": str(annotation)}).json()
+        assert first["snapshot"]["counts"] == {"categories": 3, "images": 2, "annotations": 3}
+        source = json.loads(annotation.read_text(encoding="utf-8"))
+        source["annotations"][0]["bbox"][2] += 1
+        annotation.write_text(json.dumps(source), encoding="utf-8")
+        second = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "coco", "version": "v2", "parent_dataset_id": first["id"], "annotation_path": str(annotation)}).json()
+        assert second["parent_dataset_id"] == first["id"]
+        diff = client.get(f"/api/v1/projects/{project_id}/datasets/{first['id']}/diff", params={"against_id": second["id"]})
+        assert diff.status_code == 200
+        assert "1" in diff.json()["diff"]["modified"]["annotations"]

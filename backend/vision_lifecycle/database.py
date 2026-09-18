@@ -48,6 +48,10 @@ def init_database() -> None:
         for name, declaration in project_additions.items():
             if name not in project_columns:
                 connection.exec_driver_sql(f"ALTER TABLE projects ADD COLUMN {name} {declaration}")
+        dataset_columns = {column["name"] for column in inspect(engine).get_columns("dataset_versions")}
+        for name, declaration in {"parent_dataset_id": "VARCHAR(40)", "snapshot": "JSON NOT NULL DEFAULT '{}'"}.items():
+            if name not in dataset_columns:
+                connection.exec_driver_sql(f"ALTER TABLE dataset_versions ADD COLUMN {name} {declaration}")
         model_columns = {column["name"] for column in inspect(engine).get_columns("model_versions")}
         if "status" not in model_columns:
             connection.exec_driver_sql("ALTER TABLE model_versions ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'experimental'")

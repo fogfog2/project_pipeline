@@ -36,6 +36,7 @@ class DatasetVersion(Base, Timestamped):
     __tablename__ = "dataset_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("DS"))
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    parent_dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     version: Mapped[str] = mapped_column(String(100))
     task_kind: Mapped[str] = mapped_column(String(50))
@@ -43,6 +44,7 @@ class DatasetVersion(Base, Timestamped):
     manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     annotation_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
     sample_count: Mapped[int] = mapped_column(default=0)
     class_names: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(50), default="draft")

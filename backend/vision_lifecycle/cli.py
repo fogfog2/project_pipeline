@@ -13,6 +13,7 @@ from .adapters.inspect import inspect_path
 from .artifacts import register_artifact
 from .database import SessionLocal, engine, init_database
 from .fingerprints import dataset_fingerprint, file_sha256
+from .dataset_snapshot import build_dataset_snapshot
 from .models import DatasetVersion, ModelVersion, Project
 from .runner import run_worker
 from .serializers import as_dict
@@ -112,6 +113,7 @@ def main() -> None:
             if fingerprints:
                 payload["validation"] = {**payload.get("validation", {}), "source_fingerprints": fingerprints}
             payload["content_hash"] = content_hash
+            payload["snapshot"] = build_dataset_snapshot(task_kind=payload.get("task_kind", "detection"), format=payload.get("format", "coco"), manifest_path=payload.get("manifest_path"), annotation_path=payload.get("annotation_path"))
             dataset = DatasetVersion(project_id=args.project_id, **payload)
             session.add(dataset); session.flush()
             if payload.get("annotation_path"):

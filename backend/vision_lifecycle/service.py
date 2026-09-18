@@ -4,12 +4,28 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, QuantizationRun, Release, Run, SplitVersion, StorageMapping, TargetProfile
+from .dataset_snapshot import build_dataset_snapshot
 
 
 def overview(session: Session, project_id: str) -> dict:
     project = session.get(Project, project_id)
     if not project:
         raise LookupError("Project not found")
+
+    def scrub(value):
+        if isinstance(value, dict):
+            cleaned = {}
+            for key, nested in value.items():
+                lowered = str(key).lower()
+                if any(token in lowered for token in ("path", "command", "environment", "secret", "token", "password", "credential")):
+                    continue
+                cleaned[key] = scrub(nested)
+            return cleaned
+        if isinstance(value, list):
+            return [scrub(nested) for nested in value]
+        if isinstance(value, str) and value.startswith("/"):
+            return "[redacted-absolute-path]"
+        return value
     datasets = session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()
     models = session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()
     runs = session.scalars(select(Run).where(Run.project_id == project_id).order_by(Run.created_at.desc())).all()
@@ -177,6 +193,21 @@ def safe_export(session: Session, project_id: str) -> dict:
     if not project:
         raise LookupError("Project not found")
 
+    def scrub(value):
+        if isinstance(value, dict):
+            cleaned = {}
+            for key, nested in value.items():
+                lowered = str(key).lower()
+                if any(token in lowered for token in ("path", "command", "environment", "secret", "token", "password", "credential")):
+                    continue
+                cleaned[key] = scrub(nested)
+            return cleaned
+        if isinstance(value, list):
+            return [scrub(nested) for nested in value]
+        if isinstance(value, str) and value.startswith("/"):
+            return "[redacted-absolute-path]"
+        return value
+
     def safe(item):
         data = as_dict(item)
         for key in {"storage_root", "root_path", "source_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "command", "environment_names", "working_directory"}:
@@ -196,19 +227,9 @@ def safe_export(session: Session, project_id: str) -> dict:
                 if key in {"status", "readable", "writable", "reason"}
             }
         if isinstance(data.get("details"), dict):
-            def scrub(value):
-                if isinstance(value, dict):
-                    cleaned = {}
-                    for key, nested in value.items():
-                        lowered = str(key).lower()
-                        if any(token in lowered for token in ("path", "command", "environment", "secret", "token", "password", "credential")):
-                            continue
-                        cleaned[key] = scrub(nested)
-                    return cleaned
-                if isinstance(value, list):
-                    return [scrub(nested) for nested in value]
-                return value
             data["details"] = scrub(data["details"])
+        if isinstance(data.get("snapshot"), dict):
+            data["snapshot"] = scrub(data["snapshot"])
         return data
 
     return {
@@ -254,6 +275,7 @@ def seed_demo(session: Session) -> Project:
         manifest_path="examples/mmdetection/dataset.json",
         annotation_path="examples/mmdetection/annotations/coco8.json",
         content_hash="demo-coco-mini-v1",
+        snapshot=build_dataset_snapshot(task_kind="detection", format="coco", manifest_path="examples/mmdetection/dataset.json", annotation_path="examples/mmdetection/annotations/coco8.json"),
         sample_count=2,
         class_names=["person", "bicycle", "car"],
         status="finalized",

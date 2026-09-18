@@ -53,7 +53,7 @@ U0 신뢰성 보수 → U1 빈 프로젝트·범용 CRUD UI → U2 디렉터리�
 ## 단계별 구현
 
 1. Registry/API/CLI와 RTMDet·YOLOX metadata fixture. **부분 구현** — 공통 검증·관리 artifact 디렉터리·실모델 예제 필요. 현재 등록 파일 hash와 prediction/result 상세 저장은 지원.
-2. COCO·YOLO·classification 경로 검사. **부분 구현** — 원본 hash·snapshot·label/split/evaluation/calibration 버전 관리 필요.
+2. COCO·YOLO·classification 경로 검사. **부분 구현** — 원본 hash와 COCO snapshot/parent/diff는 지원하며, 모든 형식의 full item manifest·label/split/evaluation/calibration 통합이 필요.
 3. 외부 prediction 평가와 ONNX profile adapter. **부분 구현** — dataset 전체 추론·상세 결과 저장·동일 조건 비교 강화 필요.
 4. runner·mock board·gate·report export. **부분 구현** — 독립 worker·복구·gate 정확성·공개 export 규격 보완 필요.
 5. Pages workflow와 UI onboarding. **부분 구현** — 실제 export 직접 소비·wizard·각 관리 화면의 입력/실행 흐름 필요.

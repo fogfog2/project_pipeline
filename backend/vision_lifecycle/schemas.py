@@ -23,6 +23,7 @@ class DatasetCreate(BaseModel):
     format: str = "coco"
     manifest_path: str | None = None
     annotation_path: str | None = None
+    parent_dataset_id: str | None = None
     sample_count: int = 0
     class_names: list[str] = Field(default_factory=list)
     status: str = "draft"

@@ -37,8 +37,8 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 
 | ID | 원본 절 / 사용자 시나리오 | 현재 상태 | 남은 핵심 작업 / 코드 근거 |
 |---|---|---|---|
-| S01 | §4: 미라벨 원본 이미지·영상부터 등록 | 미구현 | `DatasetVersion` 행은 생성 가능하나 개별 `DataAsset`, 원본 hash·metadata catalog 없음. `backend/vision_lifecycle/models.py` |
-| S02 | §3–4: immutable dataset, 이전 버전 재현·diff | 미구현 | 경로·버전 문자열 저장만 수행. 실제 내용 hash 생성/검증, item manifest, 원본 변경 시 평가 차단 없음. `main.py:create_dataset/evaluate_predictions` |
+| S01 | §4: 미라벨 원본 이미지·영상부터 등록 | 부분 구현 | Storage inventory와 DatasetVersion 등록, source fingerprint와 canonical snapshot을 제공한다. 영상/metadata 상태와 item-level DataAsset 자동 결합은 남아 있다 |
+| S02 | §3–4: immutable dataset, 이전 버전 재현·diff | 부분 구현 | finalized version immutable, parent version, COCO snapshot과 category/image/annotation diff, 원본 변경 시 평가 차단을 제공한다. 모든 형식의 full manifest diff와 storage 이동 검증은 남아 있다 |
 | S03 | §5: 클래스 분리·통합·폐기와 legacy 평가 | 부분 구현 | Dataset class mapping과 분류 prediction의 unknown label을 검증하고, record 오류를 상세로 보존한다. 고정 class ID·계층·mapping history 없음 |
 | S04 | §6: 그룹 단위 split·누수 방지 | 미구현 | SplitVersion과 event/device/session 중복 검증 없음 |
 | S05 | §7: Core/Field/Hard/Regression 고정 평가 세트 | 미구현 | 평가가 일반 dataset_id만 참조. 별도 평가 세트·slice membership 없음 |
