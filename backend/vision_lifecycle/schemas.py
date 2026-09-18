@@ -12,6 +12,8 @@ class ProjectCreate(BaseModel):
     storage_root: str | None = None
     git_url: str | None = None
     default_branch: str | None = None
+    mode: str = "user"
+    recipe_id: str | None = None
 
 
 class DatasetCreate(BaseModel):
@@ -25,6 +27,31 @@ class DatasetCreate(BaseModel):
     class_names: list[str] = Field(default_factory=list)
     status: str = "draft"
     validation: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    task_kind: str | None = None
+    storage_root: str | None = None
+    git_url: str | None = None
+    default_branch: str | None = None
+
+
+class DatasetUpdate(BaseModel):
+    name: str | None = None
+    annotation_path: str | None = None
+    manifest_path: str | None = None
+    class_names: list[str] | None = None
+    validation: dict[str, Any] | None = None
+
+
+class ModelUpdate(BaseModel):
+    name: str | None = None
+    alias: str | None = None
+    artifact_path: str | None = None
+    config_path: str | None = None
+    metadata_json: dict[str, Any] | None = None
 
 
 class ModelCreate(BaseModel):

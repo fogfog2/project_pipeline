@@ -100,3 +100,21 @@ def test_classification_evaluation_api():
         })
         assert response.status_code == 201
         assert response.json()["result"]["top1_accuracy"] == 0.5
+
+
+def test_empty_project_and_references_are_explicit_and_reversible():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        first = client.post("/api/v1/projects", json={"name": "empty-project", "task_kind": "unknown", "mode": "guided", "recipe_id": "mmdetection-onboarding"})
+        second = client.post("/api/v1/projects", json={"name": "other-project", "task_kind": "detection"})
+        assert first.status_code == second.status_code == 201
+        project_id, other_id = first.json()["id"], second.json()["id"]
+        assert client.get(f"/api/v1/projects/{project_id}/overview").json()["counts"] == {"datasets": 0, "models": 0, "runs": 0, "jobs": 0}
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "images", "version": "v1"}).json()
+        cross_model = client.post(f"/api/v1/projects/{other_id}/models", json={"name": "wrong", "version": "v1", "family": "x", "source_dataset_id": dataset["id"]})
+        assert cross_model.status_code == 422
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "classifier", "version": "v1", "family": "x", "source_dataset_id": dataset["id"]}).json()
+        assert client.post(f"/api/v1/projects/{project_id}/models/{model['id']}/archive").json()["status"] == "archived"
+        assert client.post(f"/api/v1/projects/{project_id}/models/{model['id']}/archive").json()["status"] == "experimental"
+        assert client.post(f"/api/v1/projects/{project_id}/archive").json()["status"] == "archived"

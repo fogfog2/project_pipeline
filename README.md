@@ -97,6 +97,12 @@ skill은 자료를 조사하고, 확인 가능한 lineage와 누락된 provenanc
 
 ## 개발 상태와 한계
 
+최신 제품 설계는 [빈 프로젝트에서 시작하는 실습형 Lifecycle 계획](docs/guided-lifecycle-plan.md)이다. 가이드 단계별 실제 연결·평가·변경 비교, 수정/보관, 디렉터리 연결과 작업 로그 UX를 포함한다. 이는 후속 개발 계획이며 현재 UI가 해당 흐름을 모두 제공하는 것은 아니다.
+
+원본 계획의 전체 시나리오는 아직 구현되지 않았다. 현재 코드에 근거한 지원 상태와 다음 개발 순서는 [Lifecycle 시나리오 점검 및 추가 개발 계획](docs/lifecycle-gap-analysis.md)을 기준으로 한다. 데이터 snapshot·label/split/calibration 버전, artifact 보존, 통합 평가·양자화 비교·Release 흐름이 남아 있다.
+
+현재 테스트의 일부는 기본 로컬 DB를 삭제·재생성한다. 기존 자료가 있는 작업 폴더에서 아래 테스트 명령을 실행하지 말고, 테스트 DB 격리 개선 전에는 별도의 임시 checkout과 빈 DB에서 실행한다.
+
 이 첫 버전은 registry, demo, COCO annotation 검증, external prediction JSON 기반 onboarding AP50 및 공식 COCO 평가, 비교 API, 경로 검사, runner profile·모의 보드 job, target profile, release gate, UI와 Pages workflow를 제공한다. 실제 MMDetection/MMDeploy 변환은 각 target SDK 환경에서 수행해 산출물과 결과 manifest를 연결한다. file upload wizard와 특정 vendor board recipe는 하드웨어·운영 환경이 정해진 뒤 추가할 확장 지점이다.
 
 백엔드 테스트는 프로젝트 가상환경에서 실행한다.

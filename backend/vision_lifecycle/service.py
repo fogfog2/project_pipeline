@@ -22,11 +22,15 @@ def overview(session: Session, project_id: str) -> dict:
         "candidate": next((m for m in models if m.alias == "candidate"), None),
         "lineage_completeness": 0 if not models else round((len(models) - incomplete) / len(models) * 100),
         "recent_runs": runs[:5],
-        "next_actions": [
-            "평가 세트를 확정하고 RTMDet 또는 YOLOX 모델을 등록하세요.",
-            "모델별 config와 class mapping을 확인한 뒤 샘플 추론을 실행하세요.",
+        "next_actions": ([
+            "1단계: 이미지·annotation 또는 기존 manifest 경로를 연결하고 형식을 검사하세요.",
+            "2단계: class mapping과 evaluation set을 확인한 뒤 DatasetVersion을 확정하세요.",
+            "3단계: 외부 학습 결과와 모델 config를 직접 선택해 연결하세요.",
+        ] if not datasets else [
+            "평가 세트를 확정하고 연결할 모델을 직접 선택하세요.",
+            "모델의 config, class mapping, 전처리 profile을 확인한 뒤 샘플 추론을 실행하세요.",
             "동일 평가 세트에서 baseline과 candidate를 비교하세요.",
-        ],
+        ]),
     }
 
 

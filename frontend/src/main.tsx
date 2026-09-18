@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type Project = { id: string; name: string; description: string; task_kind: string };
-type Model = { id: string; name: string; version: string; family: string; alias?: string; precision: string; format: string; runnable: boolean };
+type Project = { id: string; name: string; description: string; task_kind: string; mode?: string; recipe_id?: string; status?: string };
+type Model = { id: string; name: string; version: string; family: string; alias?: string; precision: string; format: string; runnable: boolean; status?: string };
 type Run = { id: string; kind: string; name: string; status: string; metrics: Record<string, number>; model_id?: string; dataset_id?: string; notes: string };
 type Dataset = { id: string; name: string; version: string; format: string; status: string; sample_count: number; validation: Record<string, unknown> };
 type Job = { id: string; runner_id: string; status: string; log: string; result_json: Record<string, unknown> };
@@ -58,10 +58,23 @@ function App() {
     if (value.length && !projectId) await loadProject(value[0].id);
   };
   useEffect(() => { void loadProjects().catch((error) => setMessage(`API 연결 오류: ${error.message}`)); }, []);
-  const createDemo = async () => {
-    const project = await api<Project>("/projects/demo", { method: "POST" });
-    await loadProjects(); await loadProject(project.id);
-    setMessage("RTMDet-tiny와 YOLOX-s의 공통 COCO mini 데모를 불러왔습니다. 이 결과는 온보딩 fixture입니다.");
+  const createRecipeProject = async () => {
+    try {
+      const project = await api<Project>("/projects", { method: "POST", body: JSON.stringify({
+        name: `MMDetection·YOLOX 실습 ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
+        description: "가이드에 따라 빈 프로젝트에서 데이터·모델·평가를 연결하는 선택형 실습",
+        task_kind: "detection", mode: "guided", recipe_id: "mmdetection-onboarding",
+      }) });
+      await loadProjects(); await loadProject(project.id);
+      setMessage("빈 실습 프로젝트를 만들었습니다. 먼저 데이터 화면에서 이미지·annotation 경로를 연결하세요. 모델과 점수는 아직 등록되지 않았습니다.");
+    } catch (error) { setMessage(`실습 프로젝트 생성 오류: ${String(error)}`); }
+  };
+  const createBlankProject = async (name: string, task: string) => {
+    try {
+      const project = await api<Project>("/projects", { method: "POST", body: JSON.stringify({ name, task_kind: task, mode: "user", recipe_id: "blank" }) });
+      await loadProjects(); await loadProject(project.id);
+      setMessage("빈 프로젝트를 만들었습니다. 다음 단계부터 자료를 직접 연결하세요.");
+    } catch (error) { setMessage(`프로젝트 생성 오류: ${String(error)}`); }
   };
   const compare = async () => {
     if (!overview?.baseline?.id || !overview?.candidate?.id) return;
@@ -77,22 +90,26 @@ function App() {
     await loadProject(projectId);
     setMessage("모의 보드 작업을 생성했습니다. 이 결과는 하드웨어 측정값이 아닙니다.");
   };
+  const archive = async (kind: "datasets" | "models", id: string) => {
+    if (!projectId || !window.confirm("원본 파일과 과거 결과는 삭제하지 않고 이 항목을 보관 처리합니다. 계속할까요?")) return;
+    try { await api(`/projects/${projectId}/${kind}/${id}/archive`, { method: "POST" }); await loadProject(projectId); setMessage("보관 상태를 변경했습니다. 필요하면 같은 메뉴에서 복원할 수 있습니다."); } catch (error) { setMessage(`보관 상태 변경 오류: ${String(error)}`); }
+  };
 
   const nav = ["개요", "데이터", "실험", "모델", "평가·비교", "실행·보드", "Release·리포트", "연결·설정", "가이드"];
   return <div className="shell">
-    <aside><div className="brand">VISION<br/><b>LIFECYCLE</b></div><button className="demo" disabled={isStatic} onClick={() => void createDemo()}>MMDetection 데모 시작</button>
+    <aside><div className="brand">VISION<br/><b>LIFECYCLE</b></div><button className="demo" disabled={isStatic} onClick={() => void createRecipeProject()}>실습 프로젝트 시작</button>
       <nav>{nav.map((item) => <button className={page === item ? "active" : ""} onClick={() => setPage(item)} key={item}>{item}</button>)}</nav>
       <small>Local mode · API v1</small></aside>
-    <main><header><div><p className="eyebrow">PROJECT / {selected?.task_kind || "DETECTION"}</p><h1>{selected?.name || "Vision AI Lifecycle"}</h1></div><select aria-label="프로젝트 선택" value={projectId || ""} onChange={(event) => void loadProject(event.target.value)}><option value="">프로젝트 선택</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></header>
+    <main><header><div><p className="eyebrow">PROJECT / {selected?.task_kind || "SETUP"}</p><h1>{selected?.name || "Vision AI Lifecycle"}</h1>{selected && <small className="muted">{selected.mode === "guided" ? "Guided practice · 자료와 결과를 단계별로 연결" : "User project · 직접 연결"}</small>}</div><div className="header-actions"><button className="secondary" disabled={isStatic} onClick={() => setProjectId(undefined)}>새 프로젝트</button><select aria-label="프로젝트 선택" value={projectId || ""} onChange={(event) => void loadProject(event.target.value)}><option value="">프로젝트 선택</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></div></header>
       <p className="notice">{message}</p>
-      {!projectId ? <ProjectStarter onCreated={(project) => void loadProjects().then(() => loadProject(project.id))} onDemo={() => void createDemo()} onError={setMessage}/> : <>
+      {!projectId ? <ProjectStarter onCreated={(name, task) => void createBlankProject(name, task)} onRecipe={() => void createRecipeProject()} onError={setMessage}/> : <>
       {page === "개요" && <><section className="cards"><Metric label="Dataset versions" value={overview?.counts.datasets ?? 0}/><Metric label="Model versions" value={overview?.counts.models ?? 0}/><Metric label="Evaluation runs" value={overview?.counts.runs ?? 0}/><Metric label="Lineage completeness" value={`${overview?.lineage_completeness ?? 0}%`}/></section>
       <section className="grid2"><article><h2>Baseline · Candidate</h2><div className="comparison"><div><label>BASELINE</label><strong>{overview?.baseline?.family || "미지정"}</strong><span>{overview?.baseline?.version}</span></div><div><label>CANDIDATE</label><strong>{overview?.candidate?.family || "미지정"}</strong><span>{overview?.candidate?.version}</span></div></div><button disabled={!overview?.baseline || !overview?.candidate} onClick={() => void compare()}>공통 평가 결과 비교</button></article><article><h2>다음 작업</h2><ol>{overview?.next_actions.map((item) => <li key={item}>{item}</li>)}</ol></article></section>
       <section><h2>최근 실행</h2><RunTable runs={runs.slice(0, 5)} /></section></>}
-      {page === "모델" && <><section><h2>모델 Registry</h2><p>가중치, MMDetection config, 전후처리, class mapping을 하나의 model bundle로 관리합니다.</p><ModelTable models={models}/></section><ModelConnect projectId={projectId} datasets={datasets} onSaved={() => void loadProject(projectId)} onError={setMessage}/></>}
+      {page === "모델" && <><section><h2>모델 Registry</h2><p>가중치, config, 전후처리, class mapping을 하나의 model bundle로 관리합니다. 학습 데이터는 자동 연결하지 않습니다.</p><ModelTable models={models} onArchive={(id) => void archive("models", id)}/></section><ModelConnect projectId={projectId} datasets={datasets} onSaved={() => void loadProject(projectId)} onError={setMessage}/></>}
       {page === "실험" && <section><h2>외부 Run 및 평가 실행</h2><RunTable runs={runs}/></section>}
-      {page === "평가·비교" && <section><h2>동일 평가 규약 비교</h2><p>공식 delta는 dataset version, evaluator version, class mapping version이 일치할 때만 계산합니다.</p><ModelTable models={models}/><button disabled={!overview?.baseline || !overview?.candidate} onClick={() => void compare()}>Baseline과 Candidate 비교</button></section>}
-      {page === "데이터" && <><section><h2>Dataset Version</h2><p>COCO, YOLO TXT, classification CSV/폴더를 검사합니다. 확정 버전은 수정하지 않습니다.</p><DatasetTable datasets={datasets}/></section><PathInspector projectId={projectId} onError={setMessage}/></>}
+      {page === "평가·비교" && <section><h2>동일 평가 규약 비교</h2><p>공식 delta는 dataset version, evaluator version, class mapping version이 일치할 때만 계산합니다.</p><ModelTable models={models} onArchive={(id) => void archive("models", id)}/><button disabled={!overview?.baseline || !overview?.candidate} onClick={() => void compare()}>Baseline과 Candidate 비교</button></section>}
+      {page === "데이터" && <><section><h2>Dataset Version</h2><p>먼저 서버/NAS 경로를 검사한 다음 검사 결과를 초안 DatasetVersion으로 저장합니다. 확정 버전은 수정하지 않고 새 버전을 만듭니다.</p><DatasetTable datasets={datasets} onArchive={(id) => void archive("datasets", id)}/><DatasetConnect projectId={projectId} onSaved={() => void loadProject(projectId)} onError={setMessage}/></section><PathInspector projectId={projectId} onError={setMessage}/></>}
       {page === "가이드" && <Guide />}
       {page === "실행·보드" && <><section><h2>실행·보드</h2><p>보드와 runtime은 버전이 있는 Target Profile로 기록합니다. 실제 benchmark manifest에는 해당 profile ID를 연결합니다.</p><TargetTable targets={targets}/>{!isStatic && <TargetConnect projectId={projectId} onSaved={() => void loadProject(projectId)} onError={setMessage}/>}</section><section><h2>등록 작업</h2><p>등록 runner만 실행할 수 있습니다. 모의 board runner는 result contract 검증용입니다.</p><button disabled={isStatic} onClick={() => void runMockBoard()}>모의 보드 실행</button><JobTable jobs={jobs}/></section></>}
       {page === "Release·리포트" && <section><h2>Release·리포트</h2><p>Gate는 필수 지표가 없으면 INCOMPLETE로 처리합니다. JSON export API는 모델과 데이터의 절대 경로를 제거합니다.</p><code>GET /api/v1/projects/{projectId}/export</code></section>}
@@ -100,15 +117,20 @@ function App() {
       </>}</main></div>;
 }
 
-function ModelTable({ models }: { models: Model[] }) { return <div className="tablewrap"><table><thead><tr><th>Family</th><th>Version</th><th>Format</th><th>Precision</th><th>Alias</th><th>실행</th></tr></thead><tbody>{models.map((model) => <tr key={model.id}><td><b>{model.family}</b></td><td>{model.version}</td><td>{model.format}</td><td>{model.precision}</td><td>{model.alias || "—"}</td><td>{model.runnable ? "가능" : "설정 필요"}</td></tr>)}</tbody></table></div>; }
+function ModelTable({ models, onArchive }: { models: Model[]; onArchive?: (id: string) => void }) { return <div className="tablewrap"><table><thead><tr><th>Family</th><th>Version</th><th>Format</th><th>Precision</th><th>Alias</th><th>Status</th><th>Action</th></tr></thead><tbody>{models.map((model) => <tr key={model.id}><td><b>{model.family}</b></td><td>{model.version}</td><td>{model.format}</td><td>{model.precision}</td><td>{model.alias || "—"}</td><td><span className="pill">{model.status || (model.runnable ? "runnable" : "setup-required")}</span></td><td>{onArchive && <button className="table-action" onClick={() => onArchive(model.id)}>{model.status === "archived" ? "복원" : "보관"}</button>}</td></tr>)}</tbody></table></div>; }
 function RunTable({ runs }: { runs: Run[] }) { return <div className="tablewrap"><table><thead><tr><th>Run</th><th>Kind</th><th>Status</th><th>bbox mAP</th><th>P50 latency</th></tr></thead><tbody>{runs.map((run) => <tr key={run.id}><td>{run.name}</td><td>{run.kind}</td><td><span className="pill">{run.status}</span></td><td>{run.metrics.bbox_mAP?.toFixed(3) ?? "—"}</td><td>{run.metrics.latency_ms_p50 ? `${run.metrics.latency_ms_p50} ms` : "—"}</td></tr>)}</tbody></table></div>; }
-function DatasetTable({ datasets }: { datasets: Dataset[] }) { return <div className="tablewrap"><table><thead><tr><th>Name</th><th>Version</th><th>Format</th><th>Samples</th><th>Status</th></tr></thead><tbody>{datasets.map((item) => <tr key={item.id}><td><b>{item.name}</b></td><td>{item.version}</td><td>{item.format}</td><td>{item.sample_count}</td><td><span className="pill">{item.status}</span></td></tr>)}</tbody></table></div>; }
+function DatasetTable({ datasets, onArchive }: { datasets: Dataset[]; onArchive?: (id: string) => void }) { return <div className="tablewrap"><table><thead><tr><th>Name</th><th>Version</th><th>Format</th><th>Samples</th><th>Status</th><th>Action</th></tr></thead><tbody>{datasets.map((item) => <tr key={item.id}><td><b>{item.name}</b></td><td>{item.version}</td><td>{item.format}</td><td>{item.sample_count}</td><td><span className="pill">{item.status}</span></td><td>{onArchive && <button className="table-action" onClick={() => onArchive(item.id)}>{item.status === "archived" ? "복원" : "보관"}</button>}</td></tr>)}</tbody></table></div>; }
 function JobTable({ jobs }: { jobs: Job[] }) { return <div className="tablewrap jobs"><table><thead><tr><th>Runner</th><th>Status</th><th>Log</th></tr></thead><tbody>{jobs.map((job) => <tr key={job.id}><td>{job.runner_id}</td><td><span className="pill">{job.status}</span></td><td>{job.log || "대기 중"}</td></tr>)}</tbody></table></div>; }
 function TargetTable({ targets }: { targets: Target[] }) { return <div className="tablewrap"><table><thead><tr><th>Target</th><th>Version</th><th>Runtime</th><th>Hardware</th></tr></thead><tbody>{targets.length ? targets.map((target) => <tr key={target.id}><td><b>{target.name}</b><br/><small>{target.target_kind}</small></td><td>{target.version}</td><td>{target.runtime}</td><td>{Object.entries(target.hardware).map(([key, value]) => `${key}: ${value}`).join(", ") || "—"}</td></tr>) : <tr><td colSpan={4}>연결된 target profile이 없습니다.</td></tr>}</tbody></table></div>; }
-function ProjectStarter({ onCreated, onDemo, onError }: { onCreated: (project: Project) => void; onDemo: () => void; onError: (message: string) => void }) {
+function ProjectStarter({ onCreated, onRecipe, onError }: { onCreated: (name: string, task: string) => void; onRecipe: () => void; onError: (message: string) => void }) {
   const [name, setName] = useState(""); const [task, setTask] = useState("detection");
-  const create = async (event: FormEvent) => { event.preventDefault(); try { onCreated(await api<Project>("/projects", { method: "POST", body: JSON.stringify({ name, task_kind: task }) })); } catch (error) { onError(`프로젝트 생성 오류: ${String(error)}`); } };
-  return <section className="empty"><h2>첫 프로젝트를 시작하세요</h2><p>새 프로젝트를 만들거나 RTMDet·YOLOX 온보딩 예제를 불러올 수 있습니다.</p><form className="form" onSubmit={(event) => void create(event)}><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="프로젝트 이름"/><select value={task} onChange={(event) => setTask(event.target.value)}><option value="detection">Detection</option><option value="classification">Classification</option></select><button type="submit">프로젝트 만들기</button></form><button className="secondary" onClick={onDemo}>RTMDet · YOLOX 예제 불러오기</button></section>;
+  const create = (event: FormEvent) => { event.preventDefault(); if (!name.trim()) { onError("프로젝트 이름을 입력하세요."); return; } onCreated(name.trim(), task); };
+  return <section className="empty"><span className="step-label">START HERE · 0 / PROJECT</span><h2>빈 프로젝트에서 시작하세요</h2><p>먼저 프로젝트만 만든 뒤 가이드에 따라 데이터, 모델, 평가 결과를 직접 연결합니다. 실습도 처음에는 빈 화면으로 시작합니다.</p><form className="form" onSubmit={(event) => void create(event)}><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="프로젝트 이름"/><select value={task} onChange={(event) => setTask(event.target.value)}><option value="detection">Detection</option><option value="classification">Classification</option><option value="unknown">아직 모름</option></select><button type="submit">빈 프로젝트 만들기</button></form><button className="secondary" disabled={isStatic} onClick={onRecipe}>MMDetection · YOLOX 실습 시작(빈 상태)</button></section>;
+}
+function DatasetConnect({ projectId, onSaved, onError }: { projectId: string; onSaved: () => void; onError: (message: string) => void }) {
+  const [name, setName] = useState(""); const [version, setVersion] = useState("v1"); const [format, setFormat] = useState("coco"); const [annotation, setAnnotation] = useState(""); const [manifest, setManifest] = useState("");
+  const save = async (event: FormEvent) => { event.preventDefault(); try { await api(`/projects/${projectId}/datasets`, { method: "POST", body: JSON.stringify({ name, version, format, task_kind: format === "classification" ? "classification" : "detection", annotation_path: annotation || null, manifest_path: manifest || null, status: "draft" }) }); setName(""); setAnnotation(""); setManifest(""); onSaved(); } catch (error) { onError(`Dataset 초안 저장 오류: ${String(error)}`); } };
+  return <div className="subform"><h3>검사한 자료를 Dataset 초안으로 연결</h3><form className="form two" onSubmit={(event) => void save(event)}><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Dataset 이름"/><input required value={version} onChange={(event) => setVersion(event.target.value)} placeholder="v1"/><select value={format} onChange={(event) => setFormat(event.target.value)}><option value="coco">COCO JSON</option><option value="yolo">YOLO TXT</option><option value="classification">Classification CSV / folder</option></select><input value={annotation} onChange={(event) => setAnnotation(event.target.value)} placeholder="annotation 경로(선택)"/><input value={manifest} onChange={(event) => setManifest(event.target.value)} placeholder="image/manifest 경로(선택)"/><button type="submit">초안 저장</button></form></div>;
 }
 function PathInspector({ projectId, onError }: { projectId: string; onError: (message: string) => void }) {
   const [path, setPath] = useState(""); const [result, setResult] = useState<string>();
@@ -116,9 +138,9 @@ function PathInspector({ projectId, onError }: { projectId: string; onError: (me
   return <section><h2>경로 검사</h2><p>서버가 접근할 수 있는 로컬/NAS 경로를 입력하세요. 저장 또는 외부 명령 실행은 하지 않습니다.</p><form className="form" onSubmit={(event) => void inspect(event)}><input required value={path} onChange={(event) => setPath(event.target.value)} placeholder="/data/project/annotations.json 또는 dataset directory"/><button type="submit">형식 검사</button></form>{result && <pre>{result}</pre>}</section>;
 }
 function ModelConnect({ projectId, datasets, onSaved, onError }: { projectId: string; datasets: Dataset[]; onSaved: () => void; onError: (message: string) => void }) {
-  const [name, setName] = useState("RTMDet"); const [version, setVersion] = useState("v1"); const [family, setFamily] = useState("RTMDet-tiny"); const [config, setConfig] = useState(""); const [artifact, setArtifact] = useState("");
-  const save = async (event: FormEvent) => { event.preventDefault(); try { await api(`/projects/${projectId}/models`, { method: "POST", body: JSON.stringify({ name, version, family, format: "mmdetection-pytorch", config_path: config || null, artifact_path: artifact || null, source_dataset_id: datasets[0]?.id || null, metadata_json: { framework: "MMDetection", provenance: config && artifact ? "complete" : "partial" } }) }); onSaved(); } catch (error) { onError(`모델 등록 오류: ${String(error)}`); } };
-  return <section><h2>MMDetection 모델 연결</h2><form className="form two" onSubmit={(event) => void save(event)}><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Model name"/><input value={version} onChange={(event) => setVersion(event.target.value)} placeholder="Version"/><input value={family} onChange={(event) => setFamily(event.target.value)} placeholder="RTMDet-tiny 또는 YOLOX-s"/><input value={config} onChange={(event) => setConfig(event.target.value)} placeholder="MMDetection config.py 경로"/><input value={artifact} onChange={(event) => setArtifact(event.target.value)} placeholder="Checkpoint .pth 경로"/><button type="submit">모델 bundle 등록</button></form></section>;
+  const [name, setName] = useState(""); const [version, setVersion] = useState("v1"); const [family, setFamily] = useState(""); const [config, setConfig] = useState(""); const [artifact, setArtifact] = useState(""); const [datasetId, setDatasetId] = useState("");
+  const save = async (event: FormEvent) => { event.preventDefault(); try { await api(`/projects/${projectId}/models`, { method: "POST", body: JSON.stringify({ name, version, family, format: "external", config_path: config || null, artifact_path: artifact || null, source_dataset_id: datasetId || null, metadata_json: { provenance: config && artifact && datasetId ? "complete" : "partial_or_unknown" } }) }); setName(""); setFamily(""); onSaved(); } catch (error) { onError(`모델 등록 오류: ${String(error)}`); } };
+  return <section><h2>외부 모델 연결</h2><p>framework를 추정하지 않습니다. 사용자가 모델 family, config, artifact, 학습 데이터 관계를 직접 선택합니다.</p><form className="form two" onSubmit={(event) => void save(event)}><input required value={name} onChange={(event) => setName(event.target.value)} placeholder="Model 이름"/><input value={version} onChange={(event) => setVersion(event.target.value)} placeholder="Version"/><input required value={family} onChange={(event) => setFamily(event.target.value)} placeholder="예: RTMDet-tiny, YOLOX-s, ResNet"/><select value={datasetId} onChange={(event) => setDatasetId(event.target.value)}><option value="">학습 데이터 unknown / 아직 연결 안 함</option>{datasets.map((dataset) => <option value={dataset.id} key={dataset.id}>{dataset.name} · {dataset.version}</option>)}</select><input value={config} onChange={(event) => setConfig(event.target.value)} placeholder="config 경로(선택)"/><input value={artifact} onChange={(event) => setArtifact(event.target.value)} placeholder="모델 artifact 경로(선택)"/><button type="submit">모델 초안 연결</button></form></section>;
 }
 function TargetConnect({ projectId, onSaved, onError }: { projectId: string; onSaved: () => void; onError: (message: string) => void }) {
   const [name, setName] = useState(""); const [runtime, setRuntime] = useState("TensorRT"); const [version, setVersion] = useState("v1"); const [hardware, setHardware] = useState("");

@@ -27,6 +27,9 @@ class Project(Base, Timestamped):
     storage_root: Mapped[str | None] = mapped_column(Text, nullable=True)
     git_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     default_branch: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    mode: Mapped[str] = mapped_column(String(40), default="user")
+    recipe_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="active")
 
 
 class DatasetVersion(Base, Timestamped):
@@ -62,6 +65,7 @@ class ModelVersion(Base, Timestamped):
     source_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     alias: Mapped[str | None] = mapped_column(String(50), nullable=True)
     runnable: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[str] = mapped_column(String(40), default="experimental")
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 

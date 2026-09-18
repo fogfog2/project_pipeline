@@ -1,0 +1,177 @@
+# 원본 Lifecycle 계획 대비 구현 점검 및 추가 개발 계획
+
+> 후속 UI 점검과 빈 프로젝트 기반 실습 요구사항은 [실습형 Lifecycle 통합 계획](guided-lifecycle-plan.md)에 통합했다. 본 문서는 코드 감사 근거와 A–G 기술 작업 분류로 유지하며, 최신 사용자 흐름과 구현 순서는 통합 계획을 따른다.
+
+점검 기준: `586b534` 커밋의 소스와 테스트. 기준 문서: `../On-device_Vision_AI_Lifecycle_Management_Plan.md` 전체 22개 절 및 사용자 후속 요구사항.
+
+## 1. 결론과 범위
+
+현재 시스템으로 원본 계획의 모든 시나리오를 수행할 수 없다. 현재 단계는 registry·평가기·연결 어댑터·대시보드의 초기 골격이다. 원본 데이터부터 승인된 모델까지 재현 가능한 lineage를 보장하는 운영 기준선은 아직 완성되지 않았다.
+
+이전 `plan.md`의 일괄적인 **완료** 표시는 API나 함수 존재를 사용자 시나리오 완료로 해석한 것으로 수정이 필요하다. 남은 일이 vendor SDK나 외부 계정 연동뿐이라는 기존 설명도 정정한다. 핵심 누락 대부분은 실제 보드 없이 개발할 수 있다.
+
+원본 문서 자체를 실행 지시로 취급하지 않는다. 이후 사용자가 확정한 범위를 적용한다.
+
+- 학습·양자화·target 변환은 외부 수행, 이 시스템은 입력·설정·산출물·평가·승인 이력을 관리한다.
+- Linux, SQLite, 로컬/NAS, CPU 추론을 기본으로 유지한다. PostgreSQL·DVC·MLflow는 필수 전제조건이 아니다.
+- 실제 제품 배포는 수행하지 않는다. Release는 결정과 증거를 보관한다.
+- 원본의 제품명·클래스·보드·수치 기준은 예시다.
+- Field loop의 기본 이력 연결은 목표에 포함한다. annotation 편집기, embedding 기반 검색, active learning·drift 자동화, 팀 인증은 후속 단계다.
+
+## 2. 점검 방법과 검증 범위
+
+DB 모델, API, CLI, worker, evaluator, 추론 adapter, 프런트엔드, 예제와 기존 테스트를 읽고 사용자 흐름의 연결 여부를 확인했다. 이후 U0의 일부 보수와 빈 프로젝트 UI가 반영되었으며, 아래 표와 결함 목록은 전체 누락을 추적하는 기준이다.
+
+기존 테스트는 `backend/tests/conftest.py`가 프로세스별 `/tmp` DB를 주입한 뒤 해당 테스트 DB에 `drop_all()`을 호출한다. 사용자 `.vision-lifecycle/registry.db`는 대상이 아니다. 17개 테스트 통과는 P0 회귀와 fixture 검증이며 전체 시나리오 완료의 근거가 아니다.
+
+DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
+
+| 입력 | 현재 출력 | 필요한 동작 |
+|---|---|---|
+| 알 수 없는 규칙 `unsupported_rule` | U0에서 422/`GateConfigError` | 규격 오류로 거부 |
+| latency 20 → 30ms, 허용 회귀 2ms | U0에서 `FAIL`, 회귀 10 | 낮을수록 좋은 지표 방향 적용 |
+
+## 3. 원본 시나리오 대응표
+
+부분 구현은 데이터 입력란·함수·API 일부가 있다는 뜻이며 전체 사용자 흐름 완료를 의미하지 않는다.
+
+| ID | 원본 절 / 사용자 시나리오 | 현재 상태 | 남은 핵심 작업 / 코드 근거 |
+|---|---|---|---|
+| S01 | §4: 미라벨 원본 이미지·영상부터 등록 | 미구현 | `DatasetVersion` 행은 생성 가능하나 개별 `DataAsset`, 원본 hash·metadata catalog 없음. `backend/vision_lifecycle/models.py` |
+| S02 | §3–4: immutable dataset, 이전 버전 재현·diff | 미구현 | 경로·버전 문자열 저장만 수행. 실제 내용 hash 생성/검증, item manifest, 원본 변경 시 평가 차단 없음. `main.py:create_dataset/evaluate_predictions` |
+| S03 | §5: 클래스 분리·통합·폐기와 legacy 평가 | 미구현 | `class_names` 배열, mapping version 문자열만 존재. 고정 class ID·계층·mapping history 없음 |
+| S04 | §6: 그룹 단위 split·누수 방지 | 미구현 | SplitVersion과 event/device/session 중복 검증 없음 |
+| S05 | §7: Core/Field/Hard/Regression 고정 평가 세트 | 미구현 | 평가가 일반 dataset_id만 참조. 별도 평가 세트·slice membership 없음 |
+| S06 | §8: field 실패 사례를 다음 dataset으로 연결 | 미구현 | FieldDataBatch, prediction/수정 label/원본 모델 관계, 후보 승격 이력 없음 |
+| S07 | §9: 외부 학습 결과 등록 | 부분 구현 | Run.config/environment 및 외부 ID 중복 검사 존재. commit/seed/loss/split 규격, artifact 보존, unknown 추적, parent 참조 검증 미완성. `importer.py`, `main.py` |
+| S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 경로·alias 필드 존재. 실제 파일 보관/hash, alias 전환 API·이력, ONNX metadata 삽입/검증 없음 |
+| S09 | §11: 독립 calibration 버전·통계 | 미구현 | CalibrationSetVersion과 sampling/전처리/분포 추적 없음 |
+| S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | `kind=quantization` 일반 Run 저장만 가능. source/output model, calibration, encoding의 강제 참조와 matrix UI 없음 |
+| S11 | §11: Quantization Loss·Target Gap 계산 | 미구현 | FP32/QuantSim/Target 역할 및 동일 lineage의 결과 세 개를 선택하는 서비스 없음 |
+| S12 | §12: 분류·검출 공통 평가 | 부분 구현 | 외부 prediction 기반 분류, AP50, pycocotools bbox 평가 존재. 전체 dataset ONNX 실행 job·검증·저장 연결 없음 |
+| S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 일부 계산 결과는 응답에만 포함. Run에는 scalar만 저장하므로 재접속 후 상세 결과 조회 불가. micro 지표, 고정 Top-K 규약, ECE, slice·오류 파일 미구현 |
+| S14 | §12,17: baseline/candidate 공식 비교 | 부분 구현·정확성 보완 필요 | 최신 evaluation 하나씩 선택. dataset·evaluator 문자열·model mapping 검사만 존재. Run 완료 여부, 비어 있는 평가 ID, 전체 설정 hash 비교 부족. `service.py:compare_models` |
+| S15 | §13: target profile·외부 보드 결과 | 부분 구현 | target 행 등록·board import 연결 존재. 측정 단위/범위/환경 규격·산출물 검증 및 board 결과에서 공통 평가 연결 미완성 |
+| S16 | §13: 외부 작업 실행·취소·복구 | 부분 구현 | subprocess runner 존재. API 내부 daemon thread이며 독립 worker가 아님. 재시작 복구·실시간 로그·취소 경쟁 조건·자식 프로세스 종료 보완 필요. `runner.py` |
+| S17 | §14: 다단계 release gate·승인 | 부분 구현·정확성 보완 필요 | 단일 평가 scalar 규칙 존재. 잘못된 규칙 PASS, regression 방향 오류, baseline evaluator/mapping 호환성 검사 누락. 다중 세트·critical class·QuantSim/board evidence 및 승인 이력 없음 |
+| S18 | §15,20: Production부터 원본까지 drill-down | 미구현 | 일반 참조 필드 일부만 존재. 중간 entity와 lineage graph API·상세 화면 없음 |
+| S19 | 후속 요구: 처음 사용자 UI만으로 온보딩 | 부분 구현 | 프로젝트/모델/target 입력, 경로 검사 가능. 저장 후 재개 wizard, dataset 등록·확정, Git/storage/runner 편집, 평가 실행·release 폼 미구현. `frontend/src/main.tsx` |
+| S20 | 후속 요구: RTMDet·YOLOX 실제 예제 | 부분 구현·실모델 미검증 | COCO annotation·수기 예측 fixture 및 다운로드 recipe 존재. 예제 이미지/실제 두 모델의 native→ONNX→평가 E2E 없음. MMDetection/MMDeploy 어댑터 존재와 실행 성공은 별개 |
+| S21 | 후속 요구: API/CLI/agent 동일 서비스 | 부분 구현 | CLI는 일부 등록·검사·export만 제공하고 ORM 직접 생성. API Pydantic/참조 검증과 불일치. skill은 안내문이며 formal adapter registry·JSON Schema·contract suite 미완성 |
+| S22 | 후속 요구: Pages 실제 결과 조회 | 부분 구현·정확성 보완 필요 | 수동 demo snapshot 사용. export에는 UI가 요구하는 overview/생성시각 없음. 정적 화면에 로컬 API 작업 버튼 일부 노출. 중첩 metadata/config/environment 자유 입력값까지 공개 가능 |
+| S23 | 후속 요구: 백업·복구·경로 이동 | 미구현 | Alembic 없음, create_all + 수동 ALTER만 존재. storage ID 매핑·artifact 백업·복원 검증 없음 |
+
+§1–3·15·17·19–21의 목표/아키텍처/수용 기준은 위 S01–S23의 통합 완료로 판단한다. §16의 추천 도구는 의무 설치 항목이 아니며 §18의 일정은 기존 예시로만 취급한다. §22 외부 참고 링크의 현재 제품 기능은 이번 코드 감사에서 재검증하지 않았다.
+
+## 4. 먼저 해결해야 하는 결함
+
+### P0: 결과 신뢰성과 사용자 자료 보존
+
+1. **테스트 DB 격리**: 1차 해결. `backend/tests/conftest.py`가 프로세스별 `/tmp` DB를 주입하고 SQLite FK를 활성화했다. CI 병렬성과 migration 회귀는 추가 검증한다.
+2. **잘못된 lineage 생성**: 1차 해결. UI가 dataset 첫 항목을 자동 연결하지 않고 사용자의 선택/unknown을 저장한다. 실제 content hash 검증은 남아 있다.
+3. **참조 무결성**: 1차 해결. model/dataset/run/parent/result/release의 프로젝트 소속과 source 존재를 검사한다. API·CLI 공통 service 통합과 cycle/richer kind 검증은 남아 있다.
+4. **비교·gate 공통 계약**: gate의 unknown section, 빈 rules, lower-is-better latency 회귀는 보수했다. protocol/IoU/label mapping/evaluation set 계약과 release baseline 호환성 검사는 남아 있다.
+5. **정적 export 계약**: 자유 JSON의 상위 경로 key 몇 개만 제거하는 방식은 metadata 안의 절대 경로·secret·command를 제거하지 못한다. 공개 필드 allowlist와 schema 검증으로 바꾸고 overview·생성시각·선택한 결과를 포함한다. export로 생성한 snapshot을 그대로 정적 UI에서 검증한다.
+6. **입력 오류를 성공으로 처리하지 않기**: bbox NaN/무한대·음수 크기, 알 수 없는 image/class, 중복 prediction ID, classification 정답과 dataset 불일치를 검사한다. 표준 COCO evaluator도 빈 예측 시 모든 지표 0으로 조기 반환해 undefined category 구분을 잃으므로 공식 evaluator와 일치하도록 보완한다.
+
+## 5. 추가 개발 순서와 완료 조건
+
+작업 순서는 A → B → C → D → E → F이다. UI는 마지막에 몰아서 만들지 않고 각 단계에서 해당 API와 함께 완성한다. 외부 학습 시스템/실제 보드가 없는 경우에도 A–F의 관리·평가 흐름은 fixture와 외부 결과 manifest로 검증할 수 있어야 한다.
+
+### A. 신뢰성 보수와 운영 기반 — P0
+
+- 위 P0 1–6 수정, 테스트 DB 격리 후 회귀 테스트 추가.
+- API/CLI 공통 service·Pydantic 규격 적용, migration 도입, JSON Schema 생성 및 schema_version 정책.
+- 기본 dataset/model/run/target 이름·버전 중복 정책 및 import 트랜잭션 정의.
+- 공개 snapshot 소비 규격과 read-only UI 정리, 로컬 UI build 정적 asset 제공 경로 검증.
+- 완료: 기존 등록 DB 보존, 교차 프로젝트 참조 거부, 모든 불일치 비교 차단, 잘못된 gate PASS 방지, export JSON으로 API 없는 UI 동작.
+
+### B. 재현 가능한 데이터와 artifact — P1
+
+- DataAsset, Annotation, DatasetItem, StorageMapping, Artifact 추가. manifest는 storage ID + 상대 경로를 사용한다.
+- image/video 원본 등록, metadata/label 상태, SHA-256 중복·손상·누락 검증. 기존 원본은 참조하되 annotation/config/model은 관리 artifact로 보존한다.
+- dataset draft 편집 → 검증 → 확정 및 parent version, label/item/content hash, 추가·삭제·라벨 변경 diff.
+- LabelClass/LabelSchemaVersion, class index↔category mapping, parent/legacy mapping history.
+- SplitVersion, EvaluationSetVersion, CalibrationSetVersion 분리. event/device/session 그룹 누수 차단, sampling seed와 분포 기록.
+- UI: 경로/브라우저 업로드 구분, 데이터 목록·이미지/annotation preview, mapping·split 검증 및 확정 화면.
+- 완료: 미라벨 원본→label 추가→dataset v1→v2 생성 후 v1 재현. 파일 1바이트 변경 시 이전 snapshot 평가 차단. 클래스 분리 후 legacy 평가 가능. 그룹 중복 split 거부. storage 루트 이동 후 ID 유지.
+
+### C. 외부 학습·모델·양자화 lineage — P1
+
+- 공통 Run을 유지하되 kind별 typed payload와 input/output artifact 관계를 정의한다. entity를 무조건 별도 테이블로 나누기보다 참조·검증·조회 규격을 우선한다.
+- TrainingRun에 dataset/label/split, commit/config/seed/loss/environment를 참조시키고 unknown을 필드별 표시한다.
+- Model bundle에 hash, 실행 profile, class mapping, source training/export/quantization run을 연결한다. alias 전환과 변경 이력 추가.
+- QuantizationRun에 source/output model, calibration version, weight/activation dtype, method/PCQ/clipping, encoding/converter를 연결한다.
+- FP32/QuantSim/Target 역할을 명시하고 공통 evaluation contract로 Quantization Loss·Target Gap 계산. 역할·조건 누락 시 INCOMPLETE.
+- lineage graph·양자화 experiment matrix·모델 상세 페이지 구현. ONNX provenance metadata 읽기/검증 및 새 export artifact에 기록.
+- 완료: release 후보에서 원본 image·config·calibration·encoding까지 조회 가능. 외부 동일 ID 재등록은 idempotent, 다른 내용은 충돌. 이름/precision만으로 QuantSim을 추정하지 않는다.
+
+### D. 통합 평가와 RTMDet·YOLOX 온보딩 — P1
+
+- dataset batch 추론→표준 prediction→평가→artifact 저장의 단일 Job 흐름.
+- versioned preprocessing/postprocessing: resize/letterbox 역변환, RGB/BGR, normalization, bbox 단위/좌표계, NMS, threshold, class mapping. 알 수 없는 출력은 adapter required로 표시.
+- ONNX 기본 분류·검출 adapter와 MMDetection/MMDeploy profile을 검증하고 실행 provider/package 버전 기록.
+- Top-K의 K, micro/macro/per-class 지표, confusion pair, slices, confidence calibration을 규격화. COCO AP/AP50/AP75/AR 및 undefined 값 처리 통일.
+- predictions, metrics, per_class, confusion, error_cases, slice_metrics, comparison HTML/CSV를 artifact로 저장하고 API/UI에서 재조회.
+- 합성 이미지·실행 가능한 classification/detection ONNX fixture 제공. RTMDet-tiny·YOLOX-s 공식 모델 recipe는 다운로드 분리, 호환 환경 버전과 검증된 출력 profile 명시.
+- UI: 평가 모델·세트·profile 선택, 미리보기 bbox 확인, 실행 job, 클래스 회귀·오류 사례 비교. 데이터셋과 calibration 버전 비교도 제공.
+- 완료: 정답/오답/빈 검출/배경/invalid bbox/잘못된 mapping fixture 검증, 실제 두 모델 sample 검증 결과 별도 기록. synthetic 성공을 실제 RTMDet/YOLOX 성공으로 표시하지 않는다.
+
+### E. 외부 작업·보드·Release — P1
+
+- 독립 worker, DB queue claim/lease, 재시작 시 interrupted 상태, 자동 재실행 금지. job input/output contract, 실시간 로그, exit code, process group 취소·timeout 및 비밀값 마스킹.
+- runner 등록/검사/실행 UI, 업로드·다운로드는 명시적 실행 버튼으로 수행. 실행 파일과 구조화 인수·작업 폴더·환경변수 이름·timeout을 저장한다.
+- TargetProfile의 hardware/OS/firmware/runtime/accelerator/execution version 규격화, BoardBenchmark에 측정 범위·batch·warmup·횟수·단위·raw output hash 기록.
+- target prediction은 공통 평가기로, summary metric은 external measurement로 구분. mock worker 결과는 실제 성능에서 제외.
+- 다중 평가 세트/critical class/양자화 손실/target gap/latency/메모리 등 근거를 고정한 ReleaseEvidence와 GateConfigVersion, 수동 결정·사유·시각·승인자 기록.
+- UI: 결과 수집 상태·누락 항목·gate별 근거와 INCOMPLETE 사유. 승인 후 실제 제품 배포는 하지 않는다.
+- 완료: 성공/실패/timeout/실행 전후 취소/API·worker 중단 테스트. 근거가 바뀌어도 과거 release 판정은 보존. 실제 보드 recipe는 target/SDK가 주어졌을 때 별도 인수 시험.
+
+### F. 초보자 도입·운영·Field 이력 — P1/P2
+
+- wizard 저장·재개: 프로젝트/task/storage → 자료 탐지 → class/split 매핑 → Git/외부 코드 → runner/skill → 소규모 평가 → 확정.
+- 모든 등록·평가·import/export·backup/restore 명령을 공통 service 기반 CLI에 제공. adapter protocol과 버전 관리·contract fixture·템플릿 문서화.
+- agent skill에 실제 지원 범위·필수 증거·unknown 처리·소규모 검증·등록 계획/결과를 연결. API/CLI를 우회한 DB 수정 금지.
+- FieldDataBatch와 failure record를 등록해 새 dataset candidate로 연결하는 최소 feedback loop. 개인정보 상태·검증 label·source model 이력 포함.
+- backup/restore는 SQLite와 manifest/artifact hash·storage mapping을 함께 검증. README를 빈 환경부터 실제 자료 연결까지 따라가기 검증.
+- Pages는 가이드/데모 기본, 선택 프로젝트의 공개 결과만 export. 생성 시각·demo 표시·모든 버튼의 정적 동작 확인.
+- 완료: 비개발자가 문서와 UI만으로 새 프로젝트를 등록→평가→리포트 출력. 백업 복원 및 경로 변경 후 lineage 유지. field 실패에서 새 candidate까지 역추적.
+
+### G. 환경 의존 확장 — 선택적 P2
+
+- 지정 보드의 ADB/SSH·vendor profiling recipe 및 실측 인수 시험.
+- 필요해진 외부 MLOps 서비스의 connector와 인증/재시도/중복 처리.
+- 팀 인증·공유 DB, annotation 편집기, perceptual/embedding 검색, active learning·drift 분석은 별도 범위로 산정한다.
+
+## 6. UI 완료 기준
+
+| 화면 | 구현해야 할 사용자 행동 | 주요 의존 단계 |
+|---|---|---|
+| 초기 연결·설정 | 프로젝트·Git·storage·runner 저장/수정/검사·재개, agent 요청문 | A/B/E/F |
+| 데이터 | 원본/annotation preview, class·split·calibration 설정, snapshot 확정·diff | B |
+| 실험·모델 | 외부 manifest 미리보기/import, 정확한 source 선택, unknown 및 alias 이력 | C |
+| 양자화·보드 | matrix, calibration·encoding 확인, target profile, job 실행/취소/결과 수집 | C/E |
+| 평가·비교 | 평가 job, profile preview, per-class/confusion/slice/오류, 조건 불일치 표시 | D |
+| lineage·Release | 항목 drill-down, evidence 기반 gate, 결정 기록·HTML/JSON/CSV export | C/D/E |
+| Pages | 로컬 API 없이 선택된 공개 snapshot 조회·가이드 이동 | A/F |
+
+화면마다 loading/empty/partial/error/static 상태, 필드별 오류·해결 행동, 키보드 접근성과 반응형 레이아웃을 검증한다. 버튼과 제목만 있는 화면을 기능 완료로 표시하지 않는다.
+
+## 7. 최종 인수 시나리오
+
+| ID | 시험 | 통과 증거 |
+|---|---|---|
+| A01 | 미라벨 이미지 등록→label 추가→dataset v1/v2 | 원본 보존, 각 버전 manifest/hash와 diff |
+| A02 | class 분리/통합·그룹 split | fine/legacy 결과, train/test 그룹 누수 거부 |
+| A03 | 외부 학습 모델·설정 등록 | 파일 hash·commit/unknown·학습 데이터 관계, 교차 프로젝트 거부 |
+| A04 | RTMDet·YOLOX 및 분류 추론 | 실행 가능한 fixture와 별도의 실모델 smoke 결과 |
+| A05 | 평가 입력 이상치·원본 변경 | 잘못된 bbox/class/reference 차단, 내용 변경 시 실행 거부 |
+| A06 | calibration v1/v2·양자화 설정 비교 | encoding/source/output 참조, 3단계 호환 결과일 때만 loss/gap |
+| A07 | 불일치 비교·gate | 빈/실패/다른 조건 결과의 공식 delta 차단, unknown rule 거부, latency 방향 검증 |
+| A08 | worker 생명주기 | 성공/실패/timeout/취소/재시작 interrupted와 로그·exit code |
+| A09 | Release 결정 | 다중 세트·class·board 증거와 승인 이력의 immutable snapshot |
+| A10 | Pages·백업·복구 | 중첩 secret·경로 제외, export 직접 소비, storage 이동 뒤 lineage 유지 |
+| A11 | field feedback | 실패 사례→검증 label→dataset candidate→새 모델 관계 |
+| A12 | README/CLI/skill 도입 | 신규 환경에서 UI/CLI 동일 결과·모든 필수 단계의 실제 실행 기록 |
+
+각 단계는 구현 코드뿐 아니라 해당 인수 증거·사용법 문서·지원 범위 표시까지 완료되어야 닫는다. 현재 기능 수나 테스트 개수로 전체 완료율을 계산하지 않는다. 다음 실제 개발 착수점은 **A: 테스트 DB 격리와 잘못된 lineage/gate/export 방지**다.

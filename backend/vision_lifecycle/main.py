@@ -19,9 +19,9 @@ from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as in
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
 from .models import DatasetVersion, Job, ModelVersion, Project, Release, Run, RunnerProfile, TargetProfile
-from .release_gate import evaluate_gate
+from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch
-from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, InferencePreviewRequest, JobCreate, ModelCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, TargetProfileCreate
+from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, TargetProfileCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, overview, safe_export, seed_demo
 
@@ -68,6 +68,15 @@ def plugins():
     ]
 
 
+@app.get("/api/v1/recipes")
+def list_recipes():
+    return [
+        {"id": "blank", "name": "내 프로젝트 연결", "task_kind": "unknown", "steps": ["project", "data", "model", "evaluation", "report"]},
+        {"id": "mmdetection-onboarding", "name": "MMDetection RTMDet·YOLOX 실습", "task_kind": "detection", "steps": ["project", "data", "rtmdet", "evaluation", "yolox", "comparison"]},
+        {"id": "classification-onboarding", "name": "분류 모델 실습", "task_kind": "classification", "steps": ["project", "data", "model", "evaluation", "comparison"]},
+    ]
+
+
 @app.get("/api/v1/environment")
 def environment_status():
     return {"onnxruntime": diagnose_onnx(), "mmdetection": diagnose_mmdetection(), "mmdeploy": diagnose_mmdeploy()}
@@ -84,6 +93,25 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         raise HTTPException(409, "A project with this name already exists")
     project = Project(**payload.model_dump())
     session.add(project); session.commit(); session.refresh(project)
+    return as_dict(project)
+
+
+@app.patch("/api/v1/projects/{project_id}")
+def update_project(project_id: str, payload: ProjectUpdate, session: Session = Depends(get_session)):
+    project = require_project(session, project_id)
+    if payload.name and payload.name != project.name and session.scalar(select(Project).where(Project.name == payload.name)):
+        raise HTTPException(409, "A project with this name already exists")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(project, key, value)
+    session.commit(); session.refresh(project)
+    return as_dict(project)
+
+
+@app.post("/api/v1/projects/{project_id}/archive")
+def archive_project(project_id: str, session: Session = Depends(get_session)):
+    project = require_project(session, project_id)
+    project.status = "archived" if project.status != "archived" else "active"
+    session.commit(); session.refresh(project)
     return as_dict(project)
 
 
@@ -118,8 +146,36 @@ def list_datasets(project_id: str, session: Session = Depends(get_session)):
 @app.post("/api/v1/projects/{project_id}/datasets", status_code=201)
 def create_dataset(project_id: str, payload: DatasetCreate, session: Session = Depends(get_session)):
     require_project(session, project_id)
+    duplicate = session.scalar(select(DatasetVersion).where(DatasetVersion.project_id == project_id, DatasetVersion.name == payload.name, DatasetVersion.version == payload.version))
+    if duplicate:
+        raise HTTPException(409, "This DatasetVersion already exists in the project")
     dataset = DatasetVersion(project_id=project_id, **payload.model_dump())
     session.add(dataset); session.commit(); session.refresh(dataset)
+    return as_dict(dataset)
+
+
+@app.patch("/api/v1/projects/{project_id}/datasets/{dataset_id}")
+def update_dataset(project_id: str, dataset_id: str, payload: DatasetUpdate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    dataset = session.get(DatasetVersion, dataset_id)
+    if not dataset or dataset.project_id != project_id:
+        raise HTTPException(404, "Dataset not found")
+    if dataset.status == "finalized":
+        raise HTTPException(409, "Finalized DatasetVersion is immutable; create a new version")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(dataset, key, value)
+    session.commit(); session.refresh(dataset)
+    return as_dict(dataset)
+
+
+@app.post("/api/v1/projects/{project_id}/datasets/{dataset_id}/archive")
+def archive_dataset(project_id: str, dataset_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    dataset = session.get(DatasetVersion, dataset_id)
+    if not dataset or dataset.project_id != project_id:
+        raise HTTPException(404, "Dataset not found")
+    dataset.status = "draft" if dataset.status == "archived" else "archived"
+    session.commit(); session.refresh(dataset)
     return as_dict(dataset)
 
 
@@ -150,10 +206,44 @@ def list_models(project_id: str, session: Session = Depends(get_session)):
 @app.post("/api/v1/projects/{project_id}/models", status_code=201)
 def create_model(project_id: str, payload: ModelCreate, session: Session = Depends(get_session)):
     require_project(session, project_id)
-    if payload.source_dataset_id and not session.get(DatasetVersion, payload.source_dataset_id):
-        raise HTTPException(422, "Source dataset not found")
+    duplicate = session.scalar(select(ModelVersion).where(ModelVersion.project_id == project_id, ModelVersion.name == payload.name, ModelVersion.version == payload.version))
+    if duplicate:
+        raise HTTPException(409, "This ModelVersion already exists in the project")
+    if payload.source_dataset_id:
+        source_dataset = session.get(DatasetVersion, payload.source_dataset_id)
+        if not source_dataset or source_dataset.project_id != project_id:
+            raise HTTPException(422, "Source dataset must belong to this project")
+    if payload.source_run_id:
+        source_run = session.get(Run, payload.source_run_id)
+        if not source_run or source_run.project_id != project_id:
+            raise HTTPException(422, "Source run must belong to this project")
     model = ModelVersion(project_id=project_id, **payload.model_dump())
     session.add(model); session.commit(); session.refresh(model)
+    return as_dict(model)
+
+
+@app.patch("/api/v1/projects/{project_id}/models/{model_id}")
+def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    model = session.get(ModelVersion, model_id)
+    if not model or model.project_id != project_id:
+        raise HTTPException(404, "Model not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(model, key, value)
+    session.commit(); session.refresh(model)
+    return as_dict(model)
+
+
+@app.post("/api/v1/projects/{project_id}/models/{model_id}/archive")
+def archive_model(project_id: str, model_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    model = session.get(ModelVersion, model_id)
+    if not model or model.project_id != project_id:
+        raise HTTPException(404, "Model not found")
+    if model.alias == "production":
+        raise HTTPException(409, "Production model must be unaliased before archiving")
+    model.status = "experimental" if model.status == "archived" else "archived"
+    session.commit(); session.refresh(model)
     return as_dict(model)
 
 
@@ -187,6 +277,11 @@ def list_runs(project_id: str, session: Session = Depends(get_session)):
 @app.post("/api/v1/projects/{project_id}/runs", status_code=201)
 def create_run(project_id: str, payload: RunCreate, session: Session = Depends(get_session)):
     require_project(session, project_id)
+    for entity, label in ((session.get(DatasetVersion, payload.dataset_id) if payload.dataset_id else None, "Dataset"), (session.get(ModelVersion, payload.model_id) if payload.model_id else None, "Model"), (session.get(Run, payload.parent_run_id) if payload.parent_run_id else None, "Parent run")):
+        if entity and entity.project_id != project_id:
+            raise HTTPException(422, f"{label} must belong to this project")
+        if (payload.dataset_id and label == "Dataset" or payload.model_id and label == "Model" or payload.parent_run_id and label == "Parent run") and not entity:
+            raise HTTPException(422, f"{label} not found")
     run = Run(project_id=project_id, **payload.model_dump())
     session.add(run); session.commit(); session.refresh(run)
     return as_dict(run)
@@ -207,6 +302,9 @@ def import_result(project_id: str, payload: ResultImportCreate, session: Session
     target_profile_id = manifest.get("target_profile_id")
     if target_profile_id and (not (target := session.get(TargetProfile, target_profile_id)) or target.project_id != project_id):
         raise HTTPException(422, "Result manifest target_profile_id does not belong to this project")
+    parent_run_id = manifest.get("parent_run_id")
+    if parent_run_id and (not (parent := session.get(Run, parent_run_id)) or parent.project_id != project_id):
+        raise HTTPException(422, "Result manifest parent_run_id does not belong to this project")
     fingerprint = manifest_hash(manifest)
     existing = session.scalar(select(Run).where(Run.project_id == project_id, Run.external_run_id == manifest["external_run_id"]))
     if existing:
@@ -215,7 +313,7 @@ def import_result(project_id: str, payload: ResultImportCreate, session: Session
         raise HTTPException(409, "An external run with this ID exists but its manifest content differs")
     run = Run(
         project_id=project_id, kind=manifest["kind"], name=manifest["name"], status=manifest.get("status", "completed"),
-        dataset_id=dataset_id, model_id=model_id, parent_run_id=manifest.get("parent_run_id"),
+        dataset_id=dataset_id, model_id=model_id, parent_run_id=parent_run_id,
         external_run_id=manifest["external_run_id"], import_hash=fingerprint,
         config={**manifest.get("config", {}), **({"target_profile_id": target_profile_id} if target_profile_id else {})}, metrics=manifest.get("metrics", {}), environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
     )
@@ -373,6 +471,10 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
     model = session.get(ModelVersion, payload.model_id)
     if not model or model.project_id != project_id:
         raise HTTPException(422, "Model must belong to this project")
+    if payload.baseline_model_id:
+        baseline_model = session.get(ModelVersion, payload.baseline_model_id)
+        if not baseline_model or baseline_model.project_id != project_id:
+            raise HTTPException(422, "Baseline model must belong to this project")
     evaluation = session.get(Run, payload.evaluation_run_id) if payload.evaluation_run_id else None
     if evaluation and (evaluation.project_id != project_id or evaluation.model_id != model.id or evaluation.kind != "evaluation"):
         raise HTTPException(422, "Evaluation must belong to the selected model and project")
@@ -380,7 +482,10 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
     if payload.baseline_model_id:
         baseline_run = session.scalar(select(Run).where(Run.project_id == project_id, Run.model_id == payload.baseline_model_id, Run.kind == "evaluation", Run.dataset_id == (evaluation.dataset_id if evaluation else None)).order_by(Run.created_at.desc()))
         baseline_metrics = baseline_run.metrics if baseline_run else None
-    result = evaluate_gate(evaluation.metrics if evaluation else None, baseline_metrics, payload.gate_config)
+    try:
+        result = evaluate_gate(evaluation.metrics if evaluation else None, baseline_metrics, payload.gate_config)
+    except GateConfigError as error:
+        raise HTTPException(422, str(error)) from error
     release = Release(project_id=project_id, **payload.model_dump(), gate_result=result, decision=result["status"])
     session.add(release); session.commit(); session.refresh(release)
     return as_dict(release)
