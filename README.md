@@ -16,6 +16,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 실패·timeout·cancelled·interrupted 작업을 원본 입력 snapshot으로 명시적으로 재시도
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - 명시적 ONNX input/output profile을 요구하는 local CPU inference preview adapter
+- 모델 등록 화면에서 ONNX/MMDeploy/MMDetection 형식·정밀도·profile을 선택하고 샘플 inference preview 실행
 - 선택 의존성 환경에서 MMDetection native config·checkpoint preview adapter
 - 선택 의존성 환경에서 MMDeploy runtime model directory preview adapter와 versioned target profile
 - versioned external result manifest import와 외부 run ID의 idempotency/conflict 검사
