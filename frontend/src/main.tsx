@@ -50,7 +50,7 @@ function App() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [storages, setStorages] = useState<StorageMapping[]>([]);
   const [page, setPage] = useState("개요");
-  const [message, setMessage] = useState("RTMDet · YOLOX 온보딩 예제를 시작하거나 기존 자료를 연결하세요.");
+  const [message, setMessage] = useState("빈 프로젝트를 만들고 가이드에 따라 Storage, Dataset, Model, Evaluation을 연결하세요.");
 
   const selected = useMemo(() => projects.find((project) => project.id === projectId), [projects, projectId]);
   const loadProject = async (id: string) => {
