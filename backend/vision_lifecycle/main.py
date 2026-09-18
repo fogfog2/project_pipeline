@@ -314,6 +314,23 @@ def archive_dataset(project_id: str, dataset_id: str, session: Session = Depends
     return as_dict(dataset)
 
 
+@app.get("/api/v1/projects/{project_id}/datasets/{dataset_id}/impact")
+def dataset_impact(project_id: str, dataset_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    dataset = session.get(DatasetVersion, dataset_id)
+    if not dataset or dataset.project_id != project_id:
+        raise HTTPException(404, "Dataset not found")
+    models = session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id, ModelVersion.source_dataset_id == dataset_id)).all()
+    runs = session.scalars(select(Run).where(Run.project_id == project_id, Run.dataset_id == dataset_id)).all()
+    versions = []
+    for entity_type, entity in (("label_schema", LabelSchemaVersion), ("split", SplitVersion), ("evaluation_set", EvaluationSetVersion), ("calibration_set", CalibrationSetVersion)):
+        versions.extend({"kind": entity_type, "id": item.id, "name": item.name, "version": item.version, "status": item.status} for item in session.scalars(select(entity).where(entity.project_id == project_id, entity.dataset_id == dataset_id)).all())
+    dependencies = ([{"kind": "model", "id": item.id, "name": f"{item.name} {item.version}", "status": item.status} for item in models]
+        + [{"kind": "run", "id": item.id, "name": item.name, "status": item.status} for item in runs]
+        + versions)
+    return {"entity": {"kind": "dataset", "id": dataset.id, "name": f"{dataset.name} {dataset.version}", "status": dataset.status}, "dependencies": dependencies, "blocking": [item for item in dependencies if item["status"] not in {"archived", "failed", "cancelled"}]}
+
+
 @app.post("/api/v1/projects/{project_id}/datasets/{dataset_id}/finalize")
 def finalize_dataset(project_id: str, dataset_id: str, session: Session = Depends(get_session)):
     require_project(session, project_id)
@@ -843,6 +860,23 @@ def archive_model(project_id: str, model_id: str, session: Session = Depends(get
     record_audit(session, project_id, "model", model.id, "archived" if model.status == "archived" else "restored", before={"status": previous_status}, after={"status": model.status})
     session.commit(); session.refresh(model)
     return as_dict(model)
+
+
+@app.get("/api/v1/projects/{project_id}/models/{model_id}/impact")
+def model_impact(project_id: str, model_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    model = session.get(ModelVersion, model_id)
+    if not model or model.project_id != project_id:
+        raise HTTPException(404, "Model not found")
+    runs = session.scalars(select(Run).where(Run.project_id == project_id, Run.model_id == model_id)).all()
+    quantizations = session.scalars(select(QuantizationRun).where(QuantizationRun.project_id == project_id, (QuantizationRun.source_model_id == model_id) | (QuantizationRun.output_model_id == model_id))).all()
+    boards = session.scalars(select(BoardBenchmark).where(BoardBenchmark.project_id == project_id, BoardBenchmark.model_id == model_id)).all()
+    releases = session.scalars(select(Release).where(Release.project_id == project_id, (Release.model_id == model_id) | (Release.baseline_model_id == model_id))).all()
+    dependencies = ([{"kind": "run", "id": item.id, "name": item.name, "status": item.status} for item in runs]
+        + [{"kind": "quantization", "id": item.id, "name": item.name, "status": item.status} for item in quantizations]
+        + [{"kind": "board", "id": item.id, "name": item.name, "status": item.status} for item in boards]
+        + [{"kind": "release", "id": item.id, "name": item.name, "status": item.decision} for item in releases])
+    return {"entity": {"kind": "model", "id": model.id, "name": f"{model.name} {model.version}", "status": model.status}, "dependencies": dependencies, "blocking": [item for item in dependencies if item["status"] not in {"archived", "failed", "cancelled", "INCOMPLETE"}]}
 
 
 @app.post("/api/v1/projects/{project_id}/models/{model_id}/verify-artifacts")

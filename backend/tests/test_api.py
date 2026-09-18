@@ -372,6 +372,21 @@ def test_audit_events_track_changes_and_export_redacts_paths():
         assert "/private/images.json" not in str(audit)
 
 
+def test_archive_impact_lists_lineage_dependencies_before_state_change():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "impact-project"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "images", "version": "v1"}).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "fixture", "source_dataset_id": dataset["id"]}).json()
+        run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "training", "name": "train", "dataset_id": dataset["id"], "model_id": model["id"]}).json()
+        dataset_impact = client.get(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/impact").json()
+        assert {item["kind"] for item in dataset_impact["dependencies"]} >= {"model", "run"}
+        model_impact = client.get(f"/api/v1/projects/{project_id}/models/{model['id']}/impact").json()
+        assert any(item["id"] == run["id"] for item in model_impact["dependencies"])
+        assert client.get(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/impact").json()["entity"]["status"] == "draft"
+
+
 def test_split_validation_rejects_duplicate_items_and_group_leakage():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

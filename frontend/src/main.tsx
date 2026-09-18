@@ -135,8 +135,13 @@ function App() {
     try { await api(`/projects/${projectId}/jobs/${id}/retry`, { method: "POST" }); await loadProject(projectId); setMessage("입력 snapshot을 보존한 새 작업을 생성했습니다."); } catch (error) { setMessage(`작업 재시도 오류: ${String(error)}`); }
   };
   const archive = async (kind: "datasets" | "models", id: string) => {
-    if (!projectId || !window.confirm("원본 파일과 과거 결과는 삭제하지 않고 이 항목을 보관 처리합니다. 계속할까요?")) return;
-    try { await api(`/projects/${projectId}/${kind}/${id}/archive`, { method: "POST" }); await loadProject(projectId); setMessage("보관 상태를 변경했습니다. 필요하면 같은 메뉴에서 복원할 수 있습니다."); } catch (error) { setMessage(`보관 상태 변경 오류: ${String(error)}`); }
+    if (!projectId) return;
+    try {
+      const impact = await api<{ dependencies: Array<{ kind: string; name: string; status: string }>; blocking: Array<unknown> }>(`/projects/${projectId}/${kind}/${id}/impact`);
+      const summary = impact.dependencies.length ? `연결된 항목 ${impact.dependencies.length}개(${impact.blocking.length}개 활성): ${impact.dependencies.slice(0, 4).map((item) => item.name).join(", ")}${impact.dependencies.length > 4 ? " …" : ""}` : "연결된 항목 없음";
+      if (!window.confirm(`원본 파일과 과거 결과는 삭제하지 않고 이 항목을 보관 처리합니다.\n\n영향 범위: ${summary}\n\n계속할까요?`)) return;
+      await api(`/projects/${projectId}/${kind}/${id}/archive`, { method: "POST" }); await loadProject(projectId); setMessage("보관 상태를 변경했습니다. 필요하면 같은 메뉴에서 복원할 수 있습니다.");
+    } catch (error) { setMessage(`보관 영향 조회/상태 변경 오류: ${String(error)}`); }
   };
   const verifyModel = async (id: string) => {
     if (!projectId || isStatic) return;
