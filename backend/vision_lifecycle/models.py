@@ -136,6 +136,8 @@ class QuantizationRun(Base, Timestamped):
     output_model_id: Mapped[str | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
     calibration_set_id: Mapped[str | None] = mapped_column(ForeignKey("calibration_set_versions.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(200))
+    source_role: Mapped[str] = mapped_column(String(40), default="fp32")
+    output_role: Mapped[str] = mapped_column(String(40), default="quantized")
     method: Mapped[str] = mapped_column(String(100), default="unknown")
     weight_dtype: Mapped[str] = mapped_column(String(40), default="unknown")
     activation_dtype: Mapped[str] = mapped_column(String(40), default="unknown")

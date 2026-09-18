@@ -57,7 +57,7 @@ U0 신뢰성 보수 → U1 빈 프로젝트·범용 CRUD UI → U2 디렉터리�
 3. 외부 prediction 평가와 ONNX profile adapter. **부분 구현** — dataset 전체 추론·상세 결과 저장·동일 조건 비교 강화 필요.
 4. runner·mock board·gate·report export. **부분 구현** — 독립 worker·복구·gate 정확성·공개 export 규격 보완 필요.
 5. Pages workflow와 UI onboarding. **부분 구현** — 실제 export 직접 소비·wizard·각 관리 화면의 입력/실행 흐름 필요.
-6. MMDetection/MMDeploy adapter와 COCO evaluator, target profile. **부분 구현** — 실모델 검증·보드 측정 계약·양자화 lineage 및 loss/gap 계산 필요.
+6. MMDetection/MMDeploy adapter와 COCO evaluator, target profile. **부분 구현** — 실모델 검증·보드 측정 계약·다중 metric/critical class 양자화 비교 강화 필요.
 7. vendor board recipe·외부 MLOps connector. **환경 의존 후속 확장** — 위 핵심 미구현 항목과 별도로 관리.
 
 ## 추가 개발 순서

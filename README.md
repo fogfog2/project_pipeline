@@ -17,6 +17,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 서비스 재시작 시 active job을 `interrupted`로 보존하고 자동 재실행하지 않는 복구 처리
 - 실패·timeout·cancelled·interrupted 작업을 원본 입력 snapshot으로 명시적으로 재시도
 - typed QuantizationRun과 BoardBenchmark 등록·조회, calibration/model/target/evaluation lineage 검증
+- 명시적 FP32·QuantSim·Target 평가 계약 검증과 Quantization Loss·Target Gap 비교 결과 저장
 - Dataset·Model·Run·Quantization·Board·Release를 연결하는 lineage API와 리포트 화면
 - recipe별 onboarding session/step progress와 evidence 저장·재개
 - 실제 Storage/Dataset/Model/Run/Release 근거가 없으면 onboarding 완료 처리를 거부

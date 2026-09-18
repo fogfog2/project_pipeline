@@ -89,6 +89,8 @@ class QuantizationRunCreate(BaseModel):
     source_model_id: str
     output_model_id: str | None = None
     calibration_set_id: str | None = None
+    source_role: str = "fp32"
+    output_role: str = "quantized"
     method: str = "unknown"
     weight_dtype: str = "unknown"
     activation_dtype: str = "unknown"
@@ -170,6 +172,14 @@ class RunCreate(BaseModel):
 class ComparisonRequest(BaseModel):
     baseline_model_id: str
     candidate_model_id: str
+
+
+class QuantizationComparisonRequest(BaseModel):
+    baseline_run_id: str
+    quantsim_run_id: str
+    target_benchmark_id: str
+    metric: str = "bbox_mAP"
+    higher_is_better: bool = True
 
 
 class JobCreate(BaseModel):

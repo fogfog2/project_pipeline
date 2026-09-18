@@ -24,7 +24,7 @@ from .importer import manifest_hash, validate_result_manifest
 from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
 from .artifacts import register_artifact, verify_artifact
@@ -581,6 +581,67 @@ def create_quantization_run(project_id: str, payload: QuantizationRunCreate, ses
     _project_entity(session, CalibrationSetVersion, payload.calibration_set_id, project_id, "Calibration set")
     item = QuantizationRun(project_id=project_id, **payload.model_dump())
     session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.post("/api/v1/projects/{project_id}/quantization-runs/{quantization_id}/compare")
+def compare_quantization_run(project_id: str, quantization_id: str, payload: QuantizationComparisonRequest, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    quantization = session.get(QuantizationRun, quantization_id)
+    baseline = session.get(Run, payload.baseline_run_id)
+    quantsim = session.get(Run, payload.quantsim_run_id)
+    benchmark = session.get(BoardBenchmark, payload.target_benchmark_id)
+    if not quantization or quantization.project_id != project_id or not baseline or baseline.project_id != project_id or not quantsim or quantsim.project_id != project_id or not benchmark or benchmark.project_id != project_id:
+        raise HTTPException(422, "Quantization comparison references must belong to this project")
+    reasons: list[str] = []
+    if baseline.kind != "evaluation" or quantsim.kind != "evaluation" or baseline.status != "completed" or quantsim.status != "completed":
+        reasons.append("baseline and QuantSim runs must be completed evaluation runs")
+    if baseline.model_id != quantization.source_model_id:
+        reasons.append("baseline run model does not match the quantization source model")
+    if quantization.output_model_id and quantsim.model_id != quantization.output_model_id:
+        reasons.append("QuantSim run model does not match the quantization output model")
+    target_run = session.get(Run, benchmark.evaluation_run_id) if benchmark.evaluation_run_id else None
+    if not target_run or target_run.project_id != project_id or target_run.kind != "evaluation" or target_run.status != "completed":
+        reasons.append("target benchmark needs a completed linked evaluation run")
+    else:
+        for label, candidate in (("QuantSim", quantsim), ("target", target_run)):
+            for key in ("dataset_id",):
+                if candidate.dataset_id != baseline.dataset_id:
+                    reasons.append(f"{label} {key} does not match baseline")
+            for key in ("evaluator_version", "protocol", "scope"):
+                if candidate.config.get(key) != baseline.config.get(key):
+                    reasons.append(f"{label} {key} does not match baseline")
+        models = [session.get(ModelVersion, identifier) for identifier in (baseline.model_id, quantsim.model_id, target_run.model_id)]
+        mappings = [model.metadata_json.get("class_mapping_version") if model else None for model in models]
+        if not mappings[0] or len(set(mappings)) != 1:
+            reasons.append("baseline, QuantSim, and target class_mapping_version must be identical and explicit")
+    base_value = baseline.metrics.get(payload.metric)
+    quant_value = quantsim.metrics.get(payload.metric)
+    target_value = target_run.metrics.get(payload.metric) if target_run else None
+    if not isinstance(base_value, (int, float)) or not isinstance(quant_value, (int, float)) or not isinstance(target_value, (int, float)):
+        reasons.append(f"metric {payload.metric} is missing from all compatible evaluations")
+    result: dict[str, object] = {
+        "status": "INCOMPLETE" if reasons else "COMPLETE",
+        "metric": payload.metric,
+        "higher_is_better": payload.higher_is_better,
+        "roles": {"source": quantization.source_role, "quantsim": quantization.output_role, "target": "board"},
+        "reasons": reasons,
+    }
+    if not reasons:
+        if payload.higher_is_better:
+            result["quantization_loss"] = round(float(base_value) - float(quant_value), 6)
+            result["target_gap"] = round(float(base_value) - float(target_value), 6)
+        else:
+            result["quantization_loss"] = round(float(quant_value) - float(base_value), 6)
+            result["target_gap"] = round(float(target_value) - float(base_value), 6)
+    comparison_run = Run(
+        project_id=project_id, kind="quantization-comparison", name=f"{quantization.name} comparison", status="completed" if not reasons else "incomplete",
+        dataset_id=baseline.dataset_id, model_id=quantsim.model_id, parent_run_id=baseline.id,
+        config={"metric": payload.metric, "higher_is_better": payload.higher_is_better, "quantsim_run_id": quantsim.id, "target_benchmark_id": benchmark.id},
+        metrics={key: value for key, value in result.items() if key in {"quantization_loss", "target_gap"} and isinstance(value, (int, float))}, details=result,
+        environment={"source": "quantization-lineage-comparison"}, notes="Comparison is incomplete unless all evaluation contracts match.",
+    )
+    session.add(comparison_run); session.commit(); session.refresh(comparison_run)
+    return {"comparison": result, "run": as_dict(comparison_run)}
 
 
 @app.get("/api/v1/projects/{project_id}/board-benchmarks")

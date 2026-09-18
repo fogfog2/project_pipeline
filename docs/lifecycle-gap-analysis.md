@@ -46,8 +46,8 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S07 | §9: 외부 학습 결과 등록 | 부분 구현 | Run.config/environment/details 및 외부 ID 중복 검사, model/config/prediction hash artifact가 존재. commit/seed/loss/split 규격, unknown 추적, parent 참조 검증 미완성. `importer.py`, `main.py` |
 | S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 모델·config 파일의 SHA-256 provenance, 소유 entity, 교체 시 superseded 이력, 재검증과 drift 시 inference 차단을 제공한다. 관리 artifact 디렉터리 복사, alias 전환 이력, ONNX metadata 삽입/검증은 남아 있다 |
 | S09 | §11: 독립 calibration 버전·통계 | 미구현 | CalibrationSetVersion과 sampling/전처리/분포 추적 없음 |
-| S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | `kind=quantization` 일반 Run 저장만 가능. source/output model, calibration, encoding의 강제 참조와 matrix UI 없음 |
-| S11 | §11: Quantization Loss·Target Gap 계산 | 미구현 | FP32/QuantSim/Target 역할 및 동일 lineage의 결과 세 개를 선택하는 서비스 없음 |
+| S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | source/output model, calibration, encoding과 명시적 source/output role을 저장하고 matrix UI의 기본 입력을 제공한다. method별 matrix와 encoding artifact 검증은 남아 있다 |
+| S11 | §11: Quantization Loss·Target Gap 계산 | 부분 구현 | baseline·QuantSim·target 평가의 dataset/evaluator/protocol/scope/class mapping 계약을 검사해 Quantization Loss·Target Gap을 Run으로 저장한다. 다중 metric/critical class와 target 측정 범위 검증은 남아 있다 |
 | S12 | §12: 분류·검출 공통 평가 | 부분 구현 | 외부 prediction 기반 분류, AP50, pycocotools bbox 평가와 invalid image/class/bbox/score 검사가 존재한다. 전체 dataset ONNX 실행 job·검증·저장 연결 없음 |
 | S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 분류 confusion/per-class와 COCO per-class/invalid 결과를 Run.details에 저장하고 재조회 가능. 기본 record/class mapping 오류도 기록한다. micro 지표, 고정 Top-K 규약, ECE, slice·오류 파일·시각화 artifact는 미구현 |
 | S14 | §12,17: baseline/candidate 공식 비교 | 부분 구현·정확성 보완 필요 | 최신 evaluation 하나씩 선택. dataset·evaluator 문자열·model mapping 검사만 존재. Run 완료 여부, 비어 있는 평가 ID, 전체 설정 hash 비교 부족. `service.py:compare_models` |

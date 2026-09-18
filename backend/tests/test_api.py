@@ -172,6 +172,28 @@ def test_quantization_and_board_lineage_requires_project_owned_references():
         assert benchmark.status_code == 201
 
 
+def test_quantization_loss_and_target_gap_require_compatible_evaluations():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "quant-comparison"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "eval", "version": "v1"}).json()
+        base = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "base", "version": "v1", "family": "base", "metadata_json": {"class_mapping_version": "labels-v1"}}).json()
+        quant = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "int8", "version": "v1", "family": "int8", "metadata_json": {"class_mapping_version": "labels-v1"}}).json()
+        lineage = client.post(f"/api/v1/projects/{project_id}/quantization-runs", json={"name": "ptq", "source_model_id": base["id"], "output_model_id": quant["id"], "source_role": "fp32", "output_role": "quantsim", "method": "ptq"}).json()
+        contract = {"evaluator_version": "eval-v1", "protocol": "coco_full", "scope": "core"}
+        baseline_run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "fp32", "dataset_id": dataset["id"], "model_id": base["id"], "config": contract, "metrics": {"bbox_mAP": 0.8}}).json()
+        quantsim_run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "quantsim", "dataset_id": dataset["id"], "model_id": quant["id"], "config": contract, "metrics": {"bbox_mAP": 0.75}}).json()
+        target_run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "target", "dataset_id": dataset["id"], "model_id": quant["id"], "config": contract, "metrics": {"bbox_mAP": 0.7}}).json()
+        target = client.post(f"/api/v1/projects/{project_id}/targets", json={"name": "board", "version": "v1"}).json()
+        benchmark = client.post(f"/api/v1/projects/{project_id}/board-benchmarks", json={"name": "target-result", "model_id": quant["id"], "target_profile_id": target["id"], "evaluation_run_id": target_run["id"]}).json()
+        comparison = client.post(f"/api/v1/projects/{project_id}/quantization-runs/{lineage['id']}/compare", json={"baseline_run_id": baseline_run["id"], "quantsim_run_id": quantsim_run["id"], "target_benchmark_id": benchmark["id"]})
+        assert comparison.status_code == 200
+        assert comparison.json()["comparison"]["status"] == "COMPLETE"
+        assert comparison.json()["comparison"]["quantization_loss"] == 0.05
+        assert comparison.json()["comparison"]["target_gap"] == 0.1
+
+
 def test_classification_evaluation_api():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
