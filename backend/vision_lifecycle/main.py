@@ -1558,6 +1558,9 @@ def cancel_job(project_id: str, job_id: str, session: Session = Depends(get_sess
         session.refresh(job)
         if job.status not in {"cancelling", "running"}:
             return as_dict(job)
+        # A different worker process may own the subprocess. Leave the
+        # cancellation marker for that worker's DB watcher to observe.
+        return as_dict(job)
     job.status = "cancelled"
     job.log = f"{job.log}Cancelled before process start.\n"
     session.commit(); session.refresh(job)

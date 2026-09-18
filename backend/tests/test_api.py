@@ -141,6 +141,10 @@ def test_runner_cancellation_stops_profile_process_group():
             if current["status"] == "running":
                 break
             sleep(0.01)
+        # Simulate an API process that does not own the worker subprocess.
+        from vision_lifecycle.runner import _lock, _processes
+        with _lock:
+            _processes.pop(job_id, None)
         cancelled = client.post(f"/api/v1/projects/{project_id}/jobs/{job_id}/cancel")
         assert cancelled.status_code == 200
         for _ in range(100):
@@ -150,6 +154,23 @@ def test_runner_cancellation_stops_profile_process_group():
             sleep(0.02)
         assert current["status"] == "cancelled"
         assert "Cancellation requested" in current["log"]
+
+
+def test_cancel_running_job_without_local_process_leaves_worker_cancellation_marker():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    from vision_lifecycle.database import SessionLocal
+    from vision_lifecycle.models import Project
+
+    with TestClient(app) as client:
+        with SessionLocal() as session:
+            project = Project(name="external-cancel-marker")
+            session.add(project); session.flush()
+            item = Job(project_id=project.id, runner_id="external-runner", command=["python"], status="running")
+            session.add(item); session.commit(); project_id, job_id = project.id, item.id
+        cancelled = client.post(f"/api/v1/projects/{project_id}/jobs/{job_id}/cancel")
+        assert cancelled.status_code == 200
+        assert cancelled.json()["status"] == "cancelling"
 
 
 def test_runner_timeout_records_terminal_status():

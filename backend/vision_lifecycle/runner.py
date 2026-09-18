@@ -51,10 +51,18 @@ def _stop_process(process: subprocess.Popen[str], *, grace_seconds: float = 2.0)
     except subprocess.TimeoutExpired:
         _signal_process_group(process, getattr(signal, "SIGKILL", 9))
         output, _ = process.communicate()
-        captured = output or ""
-        if error.output:
-            captured = f"{error.output}{captured}"
-        return captured
+        return output or ""
+
+
+def _watch_cancellation(job_id: str, process: subprocess.Popen[str], stop_event: threading.Event) -> None:
+    """Bridge DB cancellation requests to a process owned by another worker."""
+    while not stop_event.wait(0.2):
+        with SessionLocal() as session:
+            current = session.get(Job, job_id)
+            cancelling = bool(current and current.status == "cancelling")
+        if cancelling:
+            _signal_process_group(process, getattr(signal, "SIGTERM", 15))
+            return
 
 
 def recover_interrupted(*, include_queued: bool = True) -> int:
@@ -173,7 +181,14 @@ def _run_profile(job_id: str, profile_id: str, args: list[str]) -> None:
         )
         with _lock:
             _processes[job_id] = process
-        output, _ = process.communicate(timeout=timeout)
+        cancel_watch_stop = threading.Event()
+        cancel_watch = threading.Thread(target=_watch_cancellation, args=(job_id, process, cancel_watch_stop), daemon=True)
+        cancel_watch.start()
+        try:
+            output, _ = process.communicate(timeout=timeout)
+        finally:
+            cancel_watch_stop.set()
+            cancel_watch.join(timeout=0.5)
         with _lock:
             _processes.pop(job_id, None)
         with SessionLocal() as session:
