@@ -19,6 +19,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - COCO·YOLO TXT·classification folder/CSV 경로 검사
 - 승인된 local runner profile과 모의 보드 runner의 작업 상태·로그 관리
 - 서비스 재시작 시 active job을 `interrupted`로 보존하고 자동 재실행하지 않는 복구 처리
+- API 재시작 때 `queued` job은 external worker가 claim할 수 있도록 보존
 - 실패·timeout·cancelled·interrupted 작업을 원본 입력 snapshot으로 명시적으로 재시도
 - 등록된 runner는 POSIX에서 별도 process group으로 실행되어 취소·timeout 시 하위 프로세스까지 종료
 - API와 별도 worker가 실행 프로세스를 나눠 가져도 DB의 `cancelling` marker를 worker가 감지해 취소를 완료

@@ -68,8 +68,9 @@ def _watch_cancellation(job_id: str, process: subprocess.Popen[str], stop_event:
 def recover_interrupted(*, include_queued: bool = True) -> int:
     """Mark jobs from a previous process as interrupted.
 
-    The API service treats queued work as interrupted because it does not own
-    execution. An external worker leaves queued work available to claim.
+    API startup normally passes ``include_queued=False`` so external workers
+    can still claim jobs that were queued before the API restarted. Callers
+    that own the whole queue may opt into marking queued work interrupted.
     """
     changed = 0
     with SessionLocal() as session:

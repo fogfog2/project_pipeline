@@ -91,6 +91,23 @@ def test_restart_marks_active_jobs_interrupted():
         assert retry.json()["input_json"]["retry_of"] == job["id"]
 
 
+def test_api_restart_keeps_external_queue_claimable():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    from vision_lifecycle.database import SessionLocal
+    from vision_lifecycle.models import Project
+    with SessionLocal() as session:
+        project = Project(name="restart-queue")
+        session.add(project); session.flush()
+        queued = Job(project_id=project.id, runner_id="external", command=["python"], status="queued")
+        running = Job(project_id=project.id, runner_id="external", command=["python"], status="running")
+        session.add_all([queued, running]); session.commit(); queued_id, running_id = queued.id, running.id
+    assert recover_interrupted(include_queued=False) == 1
+    with SessionLocal() as session:
+        assert session.get(Job, queued_id).status == "queued"
+        assert session.get(Job, running_id).status == "interrupted"
+
+
 def test_external_worker_claims_one_queued_job():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

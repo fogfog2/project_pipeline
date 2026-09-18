@@ -43,7 +43,10 @@ from .audit import record_audit
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_database()
-    recover_interrupted()
+    # Queued jobs belong to the external worker queue and must remain claimable
+    # after an API restart. Only jobs that were actively running are marked
+    # interrupted; they are never started again automatically.
+    recover_interrupted(include_queued=False)
     yield
 
 
