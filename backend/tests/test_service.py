@@ -1,6 +1,6 @@
 from vision_lifecycle.database import Base, SessionLocal, engine
 from vision_lifecycle.service import compare_models, seed_demo
-from vision_lifecycle.models import ModelVersion
+from vision_lifecycle.models import DatasetVersion, ModelVersion, Project, Run
 from vision_lifecycle.evaluators.detection import evaluate_coco_predictions
 
 
@@ -30,6 +30,30 @@ def test_detection_evaluator_reads_fixture():
     )
     assert result["bbox_AP50"] == 1.0
     assert result["recall"] == 1.0
+
+
+def test_comparison_ignores_incompatible_or_incomplete_latest_runs():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with SessionLocal() as session:
+        project = Project(name="comparison-contract")
+        session.add(project); session.flush()
+        dataset = DatasetVersion(project_id=project.id, name="eval", version="v1", task_kind="detection", format="coco")
+        baseline = ModelVersion(project_id=project.id, name="base", version="v1", family="base", task_kind="detection", format="onnx", alias="baseline", metadata_json={"class_mapping_version": "labels-v1"})
+        candidate = ModelVersion(project_id=project.id, name="candidate", version="v1", family="candidate", task_kind="detection", format="onnx", alias="candidate", metadata_json={"class_mapping_version": "labels-v1"})
+        session.add_all([dataset, baseline, candidate]); session.flush()
+        contract = {"evaluator_version": "eval-v1", "protocol": "coco_full", "scope": "core"}
+        session.add_all([
+            Run(project_id=project.id, kind="evaluation", name="base compatible", status="completed", dataset_id=dataset.id, model_id=baseline.id, config=contract, metrics={"bbox_mAP": 0.8}),
+            Run(project_id=project.id, kind="evaluation", name="candidate compatible", status="completed", dataset_id=dataset.id, model_id=candidate.id, config=contract, metrics={"bbox_mAP": 0.75}),
+            Run(project_id=project.id, kind="evaluation", name="candidate failed", status="failed", dataset_id=dataset.id, model_id=candidate.id, config={"evaluator_version": "other"}, metrics={"bbox_mAP": 0.99}),
+        ])
+        session.commit()
+        comparison = compare_models(session, baseline.id, candidate.id)
+        assert comparison["compatible"] is True
+        assert comparison["delta"]["bbox_mAP"] == -0.05
+        assert comparison["baseline_evaluation"].name == "base compatible"
+        assert comparison["candidate_evaluation"].name == "candidate compatible"
 
 
 def test_detection_evaluator_explains_invalid_predictions():

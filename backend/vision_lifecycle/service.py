@@ -57,15 +57,34 @@ def compare_models(session: Session, baseline_id: str, candidate_id: str) -> dic
     candidate = session.get(ModelVersion, candidate_id)
     if not baseline or not candidate:
         raise LookupError("Model not found")
-    base_runs = session.scalars(select(Run).where(Run.model_id == baseline_id, Run.kind == "evaluation").order_by(Run.created_at.desc())).all()
-    cand_runs = session.scalars(select(Run).where(Run.model_id == candidate_id, Run.kind == "evaluation").order_by(Run.created_at.desc())).all()
-    base = base_runs[0] if base_runs else None
-    cand = cand_runs[0] if cand_runs else None
+    base_runs = session.scalars(select(Run).where(Run.model_id == baseline_id, Run.kind == "evaluation", Run.status == "completed").order_by(Run.created_at.desc())).all()
+    cand_runs = session.scalars(select(Run).where(Run.model_id == candidate_id, Run.kind == "evaluation", Run.status == "completed").order_by(Run.created_at.desc())).all()
     mapping_matches = bool(
         baseline.metadata_json.get("class_mapping_version")
         and baseline.metadata_json.get("class_mapping_version") == candidate.metadata_json.get("class_mapping_version")
     )
-    compatible = bool(base and cand and base.dataset_id == cand.dataset_id and base.config.get("evaluator_version") == cand.config.get("evaluator_version") and mapping_matches)
+    # Choose the newest pair that shares the complete evaluation contract. A
+    # newer failed/incompatible run must not hide an older reproducible pair.
+    base = None
+    cand = None
+    for base_candidate in base_runs:
+        for cand_candidate in cand_runs:
+            if (
+                base_candidate.dataset_id == cand_candidate.dataset_id
+                and base_candidate.config == cand_candidate.config
+                and base_candidate.config.get("evaluator_version")
+                and base_candidate.config.get("evaluator_version") == cand_candidate.config.get("evaluator_version")
+                and mapping_matches
+            ):
+                base, cand = base_candidate, cand_candidate
+                break
+        if base and cand:
+            break
+    if not base and base_runs:
+        base = base_runs[0]
+    if not cand and cand_runs:
+        cand = cand_runs[0]
+    compatible = bool(base and cand and base.dataset_id == cand.dataset_id and base.config == cand.config and base.config.get("evaluator_version") and base.config.get("evaluator_version") == cand.config.get("evaluator_version") and mapping_matches)
     delta = {}
     metric_compatibility: dict[str, str] = {}
     if compatible:
@@ -91,7 +110,7 @@ def compare_models(session: Session, baseline_id: str, candidate_id: str) -> dic
         "baseline_evaluation": base,
         "candidate_evaluation": cand,
         "compatible": compatible,
-        "reason": None if compatible else "동일 dataset version, evaluator version, class mapping version의 평가 결과가 필요합니다.",
+        "reason": None if compatible else "완료된 평가 중 동일 dataset version, evaluator/protocol 설정, class mapping version의 쌍이 필요합니다.",
         "delta": delta,
         "metric_compatibility": metric_compatibility,
     }
