@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from vision_lifecycle.database import Base, engine
 from vision_lifecycle.main import app
 from vision_lifecycle.models import Job
-from vision_lifecycle.runner import recover_interrupted
+from vision_lifecycle.runner import recover_interrupted, worker_once
 
 
 def test_demo_api_validates_evaluates_and_redacts():
@@ -76,6 +76,22 @@ def test_restart_marks_active_jobs_interrupted():
         retry = client.post(f"/api/v1/projects/{project_id}/jobs/{job['id']}/retry")
         assert retry.status_code == 201
         assert retry.json()["input_json"]["retry_of"] == job["id"]
+
+
+def test_external_worker_claims_one_queued_job():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    from vision_lifecycle.database import SessionLocal
+    with SessionLocal() as session:
+        from vision_lifecycle.models import Project
+        project = Project(name="worker-project")
+        session.add(project); session.flush()
+        job = Job(project_id=project.id, runner_id="mock-board", command=["builtin:mock-board"], input_json={"_runner_args": []}, status="queued")
+        session.add(job); session.commit(); job_id = job.id
+    assert worker_once() is True
+    with SessionLocal() as session:
+        assert session.get(Job, job_id).status == "completed"
+    assert worker_once() is False
 
 
 def test_result_import_is_idempotent_and_detects_conflict():

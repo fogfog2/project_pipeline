@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -58,7 +59,7 @@ def require_project(session: Session, project_id: str) -> Project:
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "mode": "local", "version": "0.1.0"}
+    return {"status": "ok", "mode": "local", "worker_mode": os.environ.get("VISION_LIFECYCLE_EXTERNAL_WORKER", "false").lower() == "true", "version": "0.1.0"}
 
 
 @app.get("/api/v1/plugins")
@@ -685,7 +686,8 @@ def create_job(project_id: str, payload: JobCreate, session: Session = Depends(g
         command = ["builtin:mock-board"]
     job = Job(project_id=project_id, runner_id=payload.runner_id, command=command, input_json={**payload.input_json, "_runner_args": payload.args}, status="queued")
     session.add(job); session.commit(); session.refresh(job)
-    launch(job, payload.args)
+    if os.environ.get("VISION_LIFECYCLE_EXTERNAL_WORKER", "false").lower() != "true":
+        launch(job, payload.args)
     return as_dict(job)
 
 

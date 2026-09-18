@@ -10,6 +10,7 @@ from .adapters.coco import validate_coco
 from .adapters.inspect import inspect_path
 from .database import SessionLocal, init_database
 from .models import DatasetVersion, ModelVersion, Project
+from .runner import run_worker
 from .serializers import as_dict
 from .service import safe_export, seed_demo
 
@@ -47,6 +48,9 @@ def main() -> None:
     export = sub.add_parser("export", help="Write a Pages-safe project snapshot")
     export.add_argument("project_id")
     export.add_argument("--output", required=True, help="Destination JSON file")
+    worker = sub.add_parser("worker", help="Run the external job worker")
+    worker.add_argument("--once", action="store_true", help="Claim at most one queued job and exit")
+    worker.add_argument("--poll-seconds", type=float, default=1.0)
     args = parser.parse_args()
 
     init_database()
@@ -54,6 +58,8 @@ def main() -> None:
         _json(inspect_path(args.path)); return
     if args.command == "validate-coco":
         _json(validate_coco(args.annotation_path)); return
+    if args.command == "worker":
+        run_worker(poll_seconds=args.poll_seconds, once=args.once); return
     with SessionLocal() as session:
         if args.command == "init":
             print("Registry initialized at .vision-lifecycle/registry.db")

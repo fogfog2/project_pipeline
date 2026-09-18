@@ -3,11 +3,14 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .database import SessionLocal
+from sqlalchemy import select, update
+
 from .models import Job, RunnerProfile
 
 
@@ -15,11 +18,16 @@ _processes: dict[str, subprocess.Popen[str]] = {}
 _lock = threading.Lock()
 
 
-def recover_interrupted() -> int:
-    """Mark active jobs from a previous service process as interrupted."""
+def recover_interrupted(*, include_queued: bool = True) -> int:
+    """Mark jobs from a previous process as interrupted.
+
+    The API service treats queued work as interrupted because it does not own
+    execution. An external worker leaves queued work available to claim.
+    """
     changed = 0
     with SessionLocal() as session:
-        jobs = session.query(Job).filter(Job.status.in_(["queued", "running", "cancelling"])).all()
+        statuses = ["running", "cancelling"] + (["queued"] if include_queued else [])
+        jobs = session.query(Job).filter(Job.status.in_(statuses)).all()
         for job in jobs:
             job.status = "interrupted"
             job.log = f"{job.log}Service restarted; manual retry is required.\n"
@@ -92,14 +100,48 @@ def _run_profile(job_id: str, profile_id: str, args: list[str]) -> None:
         _append_log(job_id, f"Runner failed to start: {error}\n", status="failed")
 
 
-def launch(job: Job, args: list[str]) -> None:
-    if job.runner_id == "mock-board":
-        target = _run_mock_board
-        target_args = (job.id,)
+def run_job(job_id: str, runner_id: str, args: list[str]) -> None:
+    if runner_id == "mock-board":
+        _run_mock_board(job_id)
     else:
-        target = _run_profile
-        target_args = (job.id, job.runner_id, args)
-    threading.Thread(target=target, args=target_args, daemon=True).start()
+        _run_profile(job_id, runner_id, args)
+
+
+def claim_next_job() -> tuple[str, str, list[str]] | None:
+    """Atomically claim one queued job for an external worker process."""
+    with SessionLocal() as session:
+        candidate = session.scalar(select(Job).where(Job.status == "queued").order_by(Job.created_at).limit(1))
+        if not candidate:
+            return None
+        result = session.execute(update(Job).where(Job.id == candidate.id, Job.status == "queued").values(status="running"))
+        if result.rowcount != 1:
+            session.rollback()
+            return None
+        args = candidate.input_json.get("_runner_args", []) if isinstance(candidate.input_json, dict) else []
+        session.commit()
+        return candidate.id, candidate.runner_id, args
+
+
+def worker_once() -> bool:
+    claimed = claim_next_job()
+    if not claimed:
+        return False
+    run_job(*claimed)
+    return True
+
+
+def run_worker(*, poll_seconds: float = 1.0, once: bool = False) -> None:
+    recover_interrupted(include_queued=False)
+    while True:
+        worked = worker_once()
+        if once:
+            return
+        if not worked:
+            time.sleep(max(0.1, poll_seconds))
+
+
+def launch(job: Job, args: list[str]) -> None:
+    threading.Thread(target=run_job, args=(job.id, job.runner_id, args), daemon=True).start()
 
 
 def cancel(job_id: str) -> bool:

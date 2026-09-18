@@ -44,6 +44,15 @@ visionops demo
 uvicorn vision_lifecycle.main:app --app-dir backend --reload
 ```
 
+작업을 API 프로세스와 분리하려면 API와 별도 터미널에서 external worker 모드를 사용한다. 이 모드에서는 API가 작업을 queue에 저장하고 worker가 하나씩 claim한다.
+
+```bash
+VISION_LIFECYCLE_EXTERNAL_WORKER=true uvicorn vision_lifecycle.main:app --app-dir backend --reload
+visionops worker --poll-seconds 1
+```
+
+검증이나 일회성 실행은 `visionops worker --once`를 사용한다. 서비스나 worker가 재시작되면 실행 중이던 작업은 `interrupted`로 남고 자동 재실행되지 않는다.
+
 기본 API 포트 8000이 다른 로컬 서비스에서 사용 중이면 포트를 바꿔 실행한다.
 
 ```bash
