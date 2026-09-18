@@ -40,6 +40,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 명시적 ONNX input/output profile을 요구하는 local CPU inference preview adapter
 - ONNX image record manifest 기반 batch 평가: classification Top-K/혼동행렬, COCO detection AP, 입력 manifest artifact 보존
 - 평가 Run에 per-class/confusion/error 상세 결과와 evaluator scope를 보존하고 재조회하는 결과 provenance
+- 분류 prediction record에 confidence와 slice를 명시하면 ECE calibration bin 및 slice별 지표를 계산하며, 값이 없으면 자동 추정하지 않음
 - 모델·Dataset·Run 소유 entity에 연결된 artifact hash와 lineage graph 노드
 - 등록된 파일/디렉터리를 `.vision-lifecycle/artifacts`에 관리 사본으로 보존하고 원본·관리 경로를 별도 기록(`VISION_LIFECYCLE_ARTIFACT_ROOT`로 위치 변경 가능)
 - 모델 화면의 checkpoint/config hash 재검증과 drift 시 inference preview 차단

@@ -1272,12 +1272,12 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
             "selected_item_count": len(evaluation_item_keys) if evaluation_item_keys is not None else "all",
             "evaluated_record_count": result.get("records", 0),
         }
-    metric_keys = {"top1_accuracy", "topk_accuracy", "macro_precision", "macro_recall", "macro_f1", "records"}
+    metric_keys = {"top1_accuracy", "topk_accuracy", "macro_precision", "macro_recall", "macro_f1", "records", "expected_calibration_error"}
     run = Run(
         project_id=project_id, kind="evaluation", name=f"{model.family} classification evaluation", status="completed",
         dataset_id=payload.dataset_id, model_id=model.id,
         config={"evaluator_version": payload.evaluator_version, "task_kind": "classification", **({"evaluation_set_id": evaluation_set.id} if evaluation_set else {})},
-        metrics={key: result[key] for key in metric_keys}, details=result, environment={"source": "external-classification-records"},
+        metrics={key: result[key] for key in metric_keys if key in result}, details=result, environment={"source": "external-classification-records"},
         notes="Per-class and confusion matrix output is returned by this import response.",
     )
     session.add(run); session.flush()
