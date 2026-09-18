@@ -929,13 +929,34 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
     if evaluation and (evaluation.project_id != project_id or evaluation.model_id != model.id or evaluation.kind != "evaluation"):
         raise HTTPException(422, "Evaluation must belong to the selected model and project")
     baseline_metrics = None
+    baseline_compatibility = {"status": "not_requested"}
     if payload.baseline_model_id:
-        baseline_run = session.scalar(select(Run).where(Run.project_id == project_id, Run.model_id == payload.baseline_model_id, Run.kind == "evaluation", Run.dataset_id == (evaluation.dataset_id if evaluation else None)).order_by(Run.created_at.desc()))
-        baseline_metrics = baseline_run.metrics if baseline_run else None
+        baseline_compatibility = {"status": "incomplete", "reason": "A completed baseline evaluation with the same evaluation contract is required."}
+        if evaluation:
+            baseline_model = session.get(ModelVersion, payload.baseline_model_id)
+            runs = session.scalars(select(Run).where(Run.project_id == project_id, Run.model_id == payload.baseline_model_id, Run.kind == "evaluation", Run.status == "completed", Run.dataset_id == evaluation.dataset_id).order_by(Run.created_at.desc())).all()
+            expected_mapping = model.metadata_json.get("class_mapping_version")
+            baseline_mapping = baseline_model.metadata_json.get("class_mapping_version") if baseline_model else None
+            for candidate in runs:
+                if candidate.config.get("evaluator_version") != evaluation.config.get("evaluator_version"):
+                    continue
+                if candidate.config.get("protocol") != evaluation.config.get("protocol"):
+                    continue
+                if candidate.config.get("scope") != evaluation.config.get("scope"):
+                    continue
+                if expected_mapping and expected_mapping != baseline_mapping:
+                    continue
+                baseline_metrics = candidate.metrics
+                baseline_compatibility = {"status": "compatible", "run_id": candidate.id}
+                break
     try:
         result = evaluate_gate(evaluation.metrics if evaluation else None, baseline_metrics, payload.gate_config)
     except GateConfigError as error:
         raise HTTPException(422, str(error)) from error
+    if payload.baseline_model_id and baseline_compatibility["status"] != "compatible" and payload.gate_config.get("max_regression"):
+        result["status"] = "INCOMPLETE"
+        result["reason"] = baseline_compatibility["reason"]
+    result["baseline_compatibility"] = baseline_compatibility
     release = Release(project_id=project_id, **payload.model_dump(), gate_result=result, decision=result["status"])
     session.add(release); session.commit(); session.refresh(release)
     return as_dict(release)

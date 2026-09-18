@@ -188,6 +188,21 @@ def test_classification_evaluation_api():
         assert runs[0]["details"]["confusion_matrix"]["dog"]["cat"] == 1
 
 
+def test_release_requires_compatible_baseline_for_regression_gate():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "release-contract"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "eval", "version": "v1"}).json()
+        baseline = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "base", "version": "v1", "family": "base", "alias": "baseline"}).json()
+        candidate = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "candidate", "alias": "candidate"}).json()
+        run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "candidate eval", "dataset_id": dataset["id"], "model_id": candidate["id"], "config": {"evaluator_version": "v2", "protocol": "coco_full", "scope": "full"}, "metrics": {"bbox_AP50": 0.7}}).json()
+        release = client.post(f"/api/v1/projects/{project_id}/releases", json={"name": "candidate-release", "model_id": candidate["id"], "evaluation_run_id": run["id"], "baseline_model_id": baseline["id"], "gate_config": {"max_regression": {"bbox_AP50": 0.02}}})
+        assert release.status_code == 201
+        assert release.json()["decision"] == "INCOMPLETE"
+        assert release.json()["gate_result"]["baseline_compatibility"]["status"] == "incomplete"
+
+
 def test_empty_project_and_references_are_explicit_and_reversible():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

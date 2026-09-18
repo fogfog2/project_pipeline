@@ -53,7 +53,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S14 | §12,17: baseline/candidate 공식 비교 | 부분 구현·정확성 보완 필요 | 최신 evaluation 하나씩 선택. dataset·evaluator 문자열·model mapping 검사만 존재. Run 완료 여부, 비어 있는 평가 ID, 전체 설정 hash 비교 부족. `service.py:compare_models` |
 | S15 | §13: target profile·외부 보드 결과 | 부분 구현 | target 행 등록·board import 연결 존재. 측정 단위/범위/환경 규격·산출물 검증 및 board 결과에서 공통 평가 연결 미완성 |
 | S16 | §13: 외부 작업 실행·취소·복구 | 부분 구현 | subprocess runner 존재. API 내부 daemon thread이며 독립 worker가 아님. 재시작 복구·실시간 로그·취소 경쟁 조건·자식 프로세스 종료 보완 필요. `runner.py` |
-| S17 | §14: 다단계 release gate·승인 | 부분 구현·정확성 보완 필요 | 단일 평가 scalar 규칙 존재. 잘못된 규칙 PASS, regression 방향 오류, baseline evaluator/mapping 호환성 검사 누락. 다중 세트·critical class·QuantSim/board evidence 및 승인 이력 없음 |
+| S17 | §14: 다단계 release gate·승인 | 부분 구현·정확성 보완 필요 | 단일 평가 scalar 규칙과 baseline dataset/evaluator/protocol/scope/class mapping 호환성 검사를 제공하며 불일치 regression gate는 INCOMPLETE로 남긴다. 다중 세트·critical class·QuantSim/board evidence 및 승인 이력 없음 |
 | S18 | §15,20: Production부터 원본까지 drill-down | 부분 구현 | Dataset·Model·Run 소유 artifact 노드와 `has_artifact` edge를 lineage API/화면에서 조회 가능. 양자화·Release 증거의 상세 drill-down과 변경 이력은 남아 있다 |
 | S19 | 후속 요구: 처음 사용자 UI만으로 온보딩 | 부분 구현 | 프로젝트/모델/target 입력, 경로 검사 가능. 저장 후 재개 wizard, dataset 등록·확정, Git/storage/runner 편집, 평가 실행·release 폼 미구현. `frontend/src/main.tsx` |
 | S20 | 후속 요구: RTMDet·YOLOX 실제 예제 | 부분 구현·실모델 미검증 | COCO annotation·수기 예측 fixture 및 다운로드 recipe 존재. 예제 이미지/실제 두 모델의 native→ONNX→평가 E2E 없음. MMDetection/MMDeploy 어댑터 존재와 실행 성공은 별개 |
