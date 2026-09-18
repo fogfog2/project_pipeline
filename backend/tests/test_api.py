@@ -303,3 +303,36 @@ def test_model_training_run_lineage_is_explicit():
         assert model.status_code == 201
         graph = client.get(f"/api/v1/projects/{project_id}/lineage").json()
         assert {edge["relation"] for edge in graph["edges"] if edge["target"] == model.json()["id"]} >= {"contains", "produced_by"}
+
+
+def test_split_validation_rejects_duplicate_items_and_group_leakage():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "split-validation"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={
+            "name": "coco", "version": "v1", "format": "coco", "annotation_path": "examples/mmdetection/annotations/coco8.json",
+        }).json()
+        invalid = client.post(f"/api/v1/projects/{project_id}/splits", json={
+            "name": "leaky", "version": "v1", "dataset_id": dataset["id"], "definition": {
+                "assignments": [
+                    {"item_id": 1, "split": "train", "group_id": "event-1"},
+                    {"item_id": 1, "split": "val", "group_id": "event-1"},
+                    {"item_id": 2, "split": "val", "group_id": "event-1"},
+                ], "require_complete": True,
+            },
+        })
+        assert invalid.status_code == 201
+        assert invalid.json()["validation"]["status"] == "failed"
+        assert invalid.json()["validation"]["duplicate_items"] == {"1": ["train", "val"]}
+        assert "event-1" in invalid.json()["validation"]["group_leaks"]
+        checked = client.post(f"/api/v1/projects/{project_id}/splits/{invalid.json()['id']}/validate")
+        assert checked.status_code == 200 and checked.json()["status"] == "draft"
+        valid = client.post(f"/api/v1/projects/{project_id}/splits", json={
+            "name": "clean", "version": "v1", "dataset_id": dataset["id"], "definition": {
+                "splits": {"train": [1], "val": [2]}, "groups": {"1": "event-1", "2": "event-2"}, "require_complete": True,
+            },
+        })
+        assert valid.status_code == 201 and valid.json()["validation"]["status"] == "passed"
+        promoted = client.post(f"/api/v1/projects/{project_id}/splits/{valid.json()['id']}/validate")
+        assert promoted.status_code == 200 and promoted.json()["status"] == "validated"

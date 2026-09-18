@@ -40,7 +40,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S01 | §4: 미라벨 원본 이미지·영상부터 등록 | 부분 구현 | Storage inventory와 DatasetVersion 등록, source fingerprint와 canonical snapshot, root 수정·보관/복원을 제공한다. 영상/metadata 상태와 item-level DataAsset 자동 결합은 남아 있다 |
 | S02 | §3–4: immutable dataset, 이전 버전 재현·diff | 부분 구현 | finalized version immutable, parent version, COCO snapshot과 category/image/annotation diff, 원본 변경 시 평가 차단을 제공한다. 모든 형식의 full manifest diff와 storage 이동 검증은 남아 있다 |
 | S03 | §5: 클래스 분리·통합·폐기와 legacy 평가 | 부분 구현 | Dataset class mapping과 분류 prediction의 unknown label을 검증하고, record 오류를 상세로 보존한다. 고정 class ID·계층·mapping history 없음 |
-| S04 | §6: 그룹 단위 split·누수 방지 | 미구현 | SplitVersion과 event/device/session 중복 검증 없음 |
+| S04 | §6: 그룹 단위 split·누수 방지 | 부분 구현 | SplitVersion에 assignments/splits 계약, item 중복·unknown item·group leak·require_complete 미할당 검증과 UI 재검사를 제공한다. event/device/session metadata 자동 추출과 대규모 검증 job은 남아 있다 |
 | S05 | §7: Core/Field/Hard/Regression 고정 평가 세트 | 미구현 | 평가가 일반 dataset_id만 참조. 별도 평가 세트·slice membership 없음 |
 | S06 | §8: field 실패 사례를 다음 dataset으로 연결 | 미구현 | FieldDataBatch, prediction/수정 label/원본 모델 관계, 후보 승격 이력 없음 |
 | S07 | §9: 외부 학습 결과 등록 | 부분 구현 | Run.config/environment/details 및 외부 ID 중복 검사, model/config/prediction hash artifact가 존재하며 모델 등록 화면에서 외부 `training` Run을 명시적으로 선택해 연결한다. commit/seed/loss/split 규격, unknown 추적, parent 참조 검증 미완성. `importer.py`, `main.py` |

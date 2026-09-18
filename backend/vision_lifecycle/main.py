@@ -30,6 +30,7 @@ from .service import agent_request, compare_models, lineage, overview, safe_expo
 from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
+from .split_validation import validate_split_definition
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 
 
@@ -546,10 +547,26 @@ def list_splits(project_id: str, session: Session = Depends(get_session)):
 
 @app.post("/api/v1/projects/{project_id}/splits", status_code=201)
 def create_split(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
-    require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
+    require_project(session, project_id)
+    dataset = _version_dataset(session, project_id, payload.dataset_id)
     value = {"name": payload.name, "version": payload.version, "definition": payload.definition, "dataset_id": payload.dataset_id}
-    item = SplitVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, definition=payload.definition, status=payload.status, content_hash=_version_hash(value))
+    validation = validate_split_definition(payload.definition, dataset.snapshot if dataset else None)
+    item = SplitVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, definition=payload.definition, validation=validation, status=payload.status, content_hash=_version_hash(value))
     session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.post("/api/v1/projects/{project_id}/splits/{split_id}/validate")
+def validate_split(project_id: str, split_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    item = session.get(SplitVersion, split_id)
+    if not item or item.project_id != project_id:
+        raise HTTPException(404, "Split version not found")
+    dataset = _version_dataset(session, project_id, item.dataset_id)
+    item.validation = validate_split_definition(item.definition, dataset.snapshot if dataset else None)
+    if item.validation["status"] == "passed" and item.status == "draft":
+        item.status = "validated"
+    session.commit(); session.refresh(item)
+    return as_dict(item)
 
 
 @app.get("/api/v1/projects/{project_id}/evaluation-sets")

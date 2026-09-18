@@ -98,6 +98,7 @@ class SplitVersion(Base, Timestamped):
     name: Mapped[str] = mapped_column(String(200))
     version: Mapped[str] = mapped_column(String(100))
     definition: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(40), default="draft")
     content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
