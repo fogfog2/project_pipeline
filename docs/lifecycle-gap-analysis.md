@@ -44,7 +44,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S05 | §7: Core/Field/Hard/Regression 고정 평가 세트 | 미구현 | 평가가 일반 dataset_id만 참조. 별도 평가 세트·slice membership 없음 |
 | S06 | §8: field 실패 사례를 다음 dataset으로 연결 | 미구현 | FieldDataBatch, prediction/수정 label/원본 모델 관계, 후보 승격 이력 없음 |
 | S07 | §9: 외부 학습 결과 등록 | 부분 구현 | Run.config/environment/details 및 외부 ID 중복 검사, model/config/prediction hash artifact가 존재. commit/seed/loss/split 규격, unknown 추적, parent 참조 검증 미완성. `importer.py`, `main.py` |
-| S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 모델·config 파일의 SHA-256 provenance, 소유 entity, 교체 시 superseded 이력, 재검증과 drift 시 inference 차단을 제공한다. 관리 artifact 디렉터리 복사, alias 전환 이력, ONNX metadata 삽입/검증은 남아 있다 |
+| S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 모델·config 파일의 SHA-256 provenance, 소유 entity, 교체 시 superseded 이력, 재검증과 drift 시 inference 차단, alias 변경 사유·이력 조회를 제공한다. 관리 artifact 디렉터리 복사, ONNX metadata 삽입/검증은 남아 있다 |
 | S09 | §11: 독립 calibration 버전·통계 | 미구현 | CalibrationSetVersion과 sampling/전처리/분포 추적 없음 |
 | S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | source/output model, calibration, encoding과 명시적 source/output role을 저장하고 matrix UI의 기본 입력을 제공한다. method별 matrix와 encoding artifact 검증은 남아 있다 |
 | S11 | §11: Quantization Loss·Target Gap 계산 | 부분 구현 | baseline·QuantSim·target 평가의 dataset/evaluator/protocol/scope/class mapping 계약을 검사해 Quantization Loss·Target Gap을 Run으로 저장한다. 다중 metric/critical class와 target 측정 범위 검증은 남아 있다 |
@@ -100,7 +100,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 
 - 공통 Run을 유지하되 kind별 typed payload와 input/output artifact 관계를 정의한다. entity를 무조건 별도 테이블로 나누기보다 참조·검증·조회 규격을 우선한다.
 - TrainingRun에 dataset/label/split, commit/config/seed/loss/environment를 참조시키고 unknown을 필드별 표시한다.
-- Model bundle에 hash, 실행 profile, class mapping, source training/export/quantization run을 연결한다. alias 전환과 변경 이력 추가.
+- Model bundle에 hash, 실행 profile, class mapping, source training/export/quantization run을 연결한다. alias 전환은 별도 이력 테이블과 변경 사유로 보존하며, 관리 artifact 디렉터리와 ONNX metadata 검증을 추가한다.
 - QuantizationRun에 source/output model, calibration version, weight/activation dtype, method/PCQ/clipping, encoding/converter를 연결한다.
 - FP32/QuantSim/Target 역할을 명시하고 공통 evaluation contract로 Quantization Loss·Target Gap 계산. 역할·조건 누락 시 INCOMPLETE.
 - lineage graph·양자화 experiment matrix·모델 상세 페이지 구현. ONNX provenance metadata 읽기/검증 및 새 export artifact에 기록.

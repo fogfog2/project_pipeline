@@ -134,6 +134,7 @@ class ArtifactCreate(BaseModel):
 class ModelUpdate(BaseModel):
     name: str | None = None
     alias: str | None = None
+    alias_reason: str = ""
     artifact_path: str | None = None
     config_path: str | None = None
     metadata_json: dict[str, Any] | None = None

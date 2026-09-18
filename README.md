@@ -31,6 +31,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 모델·Dataset·Run 소유 entity에 연결된 artifact hash와 lineage graph 노드
 - 모델 화면의 checkpoint/config hash 재검증과 drift 시 inference preview 차단
 - 모델·config 교체 시 과거 artifact를 `superseded`로 보존하고 현재 provenance와 구분
+- baseline/candidate alias 변경을 별도 이력으로 보존하고 변경 사유를 모델 화면에서 조회
 - 모델 등록 화면에서 ONNX/MMDeploy/MMDetection 형식·정밀도·profile을 선택하고 샘플 inference preview 실행
 - 선택 의존성 환경에서 MMDetection native config·checkpoint preview adapter
 - 선택 의존성 환경에서 MMDeploy runtime model directory preview adapter와 versioned target profile
@@ -106,6 +107,8 @@ visionops restore --input backups/registry.sqlite
 ```
 
 `export` 결과는 API export와 같은 redaction 규칙을 사용한다. 원본·annotation·checkpoint의 절대 경로, 명령과 환경변수 이름은 포함하지 않는다.
+
+모델을 baseline 또는 candidate로 승격·교체할 때는 `PATCH /api/v1/projects/{project_id}/models/{model_id}`에 `alias`와 선택적인 `alias_reason`을 보내고, 변경 이력은 `GET /api/v1/projects/{project_id}/models/{model_id}/alias-history`에서 확인한다. 기존 모델을 덮어쓰지 않고 이전 alias와 사유를 남기므로 비교 기준의 이동을 재현할 수 있다.
 
 `backup`/`restore`는 로컬 SQLite registry의 ID와 lineage를 보존하는 운영 백업이다. Pages 공개용 결과를 만들 때는 `export`를 사용하며, backup 파일에는 로컬 경로와 설정이 포함될 수 있으므로 공개 저장소에 올리지 않는다.
 

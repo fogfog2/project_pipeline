@@ -21,7 +21,7 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
+from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
@@ -668,6 +668,15 @@ def list_models(project_id: str, session: Session = Depends(get_session)):
     return [as_dict(x) for x in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()]
 
 
+@app.get("/api/v1/projects/{project_id}/models/{model_id}/alias-history")
+def model_alias_history(project_id: str, model_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    model = session.get(ModelVersion, model_id)
+    if not model or model.project_id != project_id:
+        raise HTTPException(404, "Model not found")
+    return [as_dict(item) for item in session.scalars(select(ModelAliasHistory).where(ModelAliasHistory.project_id == project_id, ModelAliasHistory.model_id == model_id).order_by(ModelAliasHistory.created_at.desc())).all()]
+
+
 @app.post("/api/v1/projects/{project_id}/models", status_code=201)
 def create_model(project_id: str, payload: ModelCreate, session: Session = Depends(get_session)):
     require_project(session, project_id)
@@ -702,8 +711,12 @@ def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: 
     if not model or model.project_id != project_id:
         raise HTTPException(404, "Model not found")
     values = payload.model_dump(exclude_unset=True)
+    alias_reason = values.pop("alias_reason", "")
+    previous_alias = model.alias
     for key, value in values.items():
         setattr(model, key, value)
+    if "alias" in values and values["alias"] != previous_alias:
+        session.add(ModelAliasHistory(project_id=project_id, model_id=model.id, previous_alias=previous_alias, new_alias=model.alias, reason=alias_reason))
     if "artifact_path" in values:
         model.artifact_sha256 = file_sha256(model.artifact_path) if model.artifact_path and Path(model.artifact_path).is_file() else None
         if model.artifact_path:

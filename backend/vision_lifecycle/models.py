@@ -217,6 +217,16 @@ class ModelVersion(Base, Timestamped):
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class ModelAliasHistory(Base, Timestamped):
+    __tablename__ = "model_alias_history"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ALIAS"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    model_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id"), index=True)
+    previous_alias: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    new_alias: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+
+
 class Run(Base, Timestamped):
     __tablename__ = "runs"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("RUN"))

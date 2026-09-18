@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, QuantizationRun, Release, Run, SplitVersion, StorageMapping, TargetProfile
+from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, Project, QuantizationRun, Release, Run, SplitVersion, StorageMapping, TargetProfile
 from .dataset_snapshot import build_dataset_snapshot
 
 
@@ -247,6 +247,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "schema_version": "1.1", "generated_at": datetime.now(UTC).isoformat(), "project": safe(project), "overview": overview_export,
         "datasets": [safe(x) for x in session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()],
         "models": [safe(x) for x in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()],
+        "model_alias_history": [safe(x) for x in session.scalars(select(ModelAliasHistory).where(ModelAliasHistory.project_id == project_id).order_by(ModelAliasHistory.created_at.desc())).all()],
         "runs": [safe(x) for x in session.scalars(select(Run).where(Run.project_id == project_id)).all()],
         "storages": [safe(x) for x in session.scalars(select(StorageMapping).where(StorageMapping.project_id == project_id)).all()],
         "assets": [safe(x) for x in session.scalars(select(DataAsset).where(DataAsset.project_id == project_id)).all()],
