@@ -88,9 +88,12 @@ Python과 Node.js/npm이 설치된 Linux 환경에서 실행한다.
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
-visionops demo
-uvicorn vision_lifecycle.main:app --app-dir backend --reload
+./scripts/run-local.sh
 ```
+
+스크립트는 API를 8010번, UI를 5173번에 열고 Vite proxy를 같은 API 포트로 맞춘다. 포트가 이미 사용 중이면 `API_PORT=8011 UI_PORT=5174 ./scripts/run-local.sh`처럼 바꿔 실행한다. 데모 registry가 필요할 때는 별도 터미널에서 `visionops demo`를 실행한다.
+
+수동으로 API만 실행할 때는 `uvicorn vision_lifecycle.main:app --app-dir backend --reload --port 8010`을 사용하고, UI에는 `VITE_API_PORT=8010 npm run dev`를 지정한다.
 
 작업을 API 프로세스와 분리하려면 API와 별도 터미널에서 external worker 모드를 사용한다. 이 모드에서는 API가 작업을 queue에 저장하고 worker가 하나씩 claim한다.
 
@@ -101,23 +104,7 @@ visionops worker --poll-seconds 1
 
 검증이나 일회성 실행은 `visionops worker --once`를 사용한다. 서비스나 worker가 재시작되면 실행 중이던 작업은 `interrupted`로 남고 자동 재실행되지 않는다.
 
-기본 API 포트 8000이 다른 로컬 서비스에서 사용 중이면 포트를 바꿔 실행한다.
-
-```bash
-uvicorn vision_lifecycle.main:app --app-dir backend --reload --port 8001
-```
-
-별도 터미널에서 UI를 실행한다.
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-API를 8001번으로 실행한 경우에는 `VITE_API_PORT=8001 npm run dev`를 사용한다.
-
-브라우저에서 `http://127.0.0.1:5173`를 열고 **빈 프로젝트 만들기** 또는 **MMDetection · YOLOX 실습 시작(빈 상태)**을 선택한다. 먼저 **연결·설정**에서 이미지·annotation·모델이 있는 서버/NAS root를 Storage mapping으로 등록·검사한 뒤, 데이터와 모델을 단계별로 연결한다. API 문서는 `http://127.0.0.1:8000/docs`에서 확인한다.
+브라우저에서 `http://127.0.0.1:5173`를 열고 **빈 프로젝트 만들기** 또는 **MMDetection · YOLOX 실습 시작(빈 상태)**을 선택한다. 먼저 **연결·설정**에서 이미지·annotation·모델이 있는 서버/NAS root를 Storage mapping으로 등록·검사한 뒤, 데이터와 모델을 단계별로 연결한다. 기본 실행의 API 문서는 `http://127.0.0.1:8010/docs`에서 확인한다.
 
 GitHub Pages는 Actions의 `workflow_dispatch`로 배포한다. 실행 시 `snapshot_source=demo`를 선택하면 fixture registry를 임시 SQLite에 만들고 `visionops export`로 Pages-safe `snapshot.json`을 생성한다. 실제 프로젝트 결과는 로컬에서 검토한 `visionops export <PROJECT_ID> --output pages/<name>.json` 파일을 커밋한 뒤 `snapshot_source=committed`와 `snapshot_path=pages/<name>.json`을 선택해 게시한다. workflow는 필수 snapshot 키와 redaction 계약을 먼저 검사하며, 로컬 API·명령 실행은 정적 페이지에 포함하지 않는다.
 
