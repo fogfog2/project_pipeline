@@ -44,7 +44,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S05 | §7: Core/Field/Hard/Regression 고정 평가 세트 | 미구현 | 평가가 일반 dataset_id만 참조. 별도 평가 세트·slice membership 없음 |
 | S06 | §8: field 실패 사례를 다음 dataset으로 연결 | 미구현 | FieldDataBatch, prediction/수정 label/원본 모델 관계, 후보 승격 이력 없음 |
 | S07 | §9: 외부 학습 결과 등록 | 부분 구현 | Run.config/environment/details 및 외부 ID 중복 검사, model/config/prediction hash artifact가 존재. commit/seed/loss/split 규격, unknown 추적, parent 참조 검증 미완성. `importer.py`, `main.py` |
-| S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 모델·config 파일의 SHA-256 provenance와 수정 시 새 artifact 기록을 제공한다. 관리 artifact 디렉터리 복사, alias 전환 이력, ONNX metadata 삽입/검증은 남아 있다 |
+| S08 | §10: model bundle·alias·ONNX provenance | 부분 구현 | 모델·config 파일의 SHA-256 provenance, 소유 entity, 재검증과 drift 시 inference 차단을 제공한다. 관리 artifact 디렉터리 복사, alias 전환 이력, ONNX metadata 삽입/검증은 남아 있다 |
 | S09 | §11: 독립 calibration 버전·통계 | 미구현 | CalibrationSetVersion과 sampling/전처리/분포 추적 없음 |
 | S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | `kind=quantization` 일반 Run 저장만 가능. source/output model, calibration, encoding의 강제 참조와 matrix UI 없음 |
 | S11 | §11: Quantization Loss·Target Gap 계산 | 미구현 | FP32/QuantSim/Target 역할 및 동일 lineage의 결과 세 개를 선택하는 서비스 없음 |

@@ -27,7 +27,7 @@ from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
-from .artifacts import register_artifact
+from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 
@@ -650,12 +650,27 @@ def archive_model(project_id: str, model_id: str, session: Session = Depends(get
     return as_dict(model)
 
 
+@app.post("/api/v1/projects/{project_id}/models/{model_id}/verify-artifacts")
+def verify_model_artifacts(project_id: str, model_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    model = session.get(ModelVersion, model_id)
+    if not model or model.project_id != project_id:
+        raise HTTPException(404, "Model not found")
+    artifacts = session.scalars(select(Artifact).where(Artifact.project_id == project_id, Artifact.owner_type == "model", Artifact.owner_id == model.id)).all()
+    results = [verify_artifact(artifact) for artifact in artifacts]
+    session.commit()
+    return {"model_id": model.id, "ok": all(item["status"] in {"verified", "directory", "registered"} for item in results), "artifacts": results}
+
+
 @app.post("/api/v1/projects/{project_id}/inference-preview")
 def inference_preview(project_id: str, payload: InferencePreviewRequest, session: Session = Depends(get_session)):
     require_project(session, project_id)
     model = session.get(ModelVersion, payload.model_id)
     if not model or model.project_id != project_id:
         raise HTTPException(422, "Model must belong to this project")
+    for path_value, expected_hash, label in ((model.artifact_path, model.artifact_sha256, "model artifact"), (model.config_path, model.config_sha256, "model config")):
+        if expected_hash and path_value and Path(path_value).is_file() and file_sha256(path_value) != expected_hash:
+            raise HTTPException(409, f"{label} changed after registration; verify or create a new ModelVersion")
     try:
         if model.format == "onnx" and model.artifact_path:
             profile = model.metadata_json.get("onnx_profile")

@@ -47,3 +47,25 @@ def register_artifact(
     )
     session.add(artifact)
     return artifact
+
+
+def verify_artifact(artifact: Artifact) -> dict[str, object]:
+    """Refresh an artifact's accessibility, size, and content status."""
+    path = Path(artifact.source_path).expanduser() if artifact.source_path else None
+    if not path:
+        artifact.status = "registered"
+        return {"id": artifact.id, "status": artifact.status, "reason": "source path is not configured"}
+    if path.is_dir():
+        artifact.status = "directory"
+        return {"id": artifact.id, "status": artifact.status, "reason": "directory references are not hashed"}
+    if not path.is_file():
+        artifact.status = "unavailable"
+        return {"id": artifact.id, "status": artifact.status, "reason": "source file is unavailable"}
+    digest = file_sha256(path)
+    artifact.size_bytes = path.stat().st_size
+    if artifact.sha256 and artifact.sha256 != digest:
+        artifact.status = "drifted"
+        return {"id": artifact.id, "status": artifact.status, "expected_sha256": artifact.sha256, "actual_sha256": digest}
+    artifact.sha256 = digest
+    artifact.status = "verified"
+    return {"id": artifact.id, "status": artifact.status, "sha256": digest, "size_bytes": artifact.size_bytes}
