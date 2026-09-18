@@ -2,6 +2,20 @@ name: Publish static lifecycle guide
 
 on:
   workflow_dispatch:
+    inputs:
+      snapshot_source:
+        description: "Pages에 게시할 snapshot"
+        required: true
+        default: demo
+        type: choice
+        options:
+          - demo
+          - committed
+      snapshot_path:
+        description: "커밋된 export JSON 경로 (committed 선택 시)"
+        required: false
+        default: frontend/public/snapshot.json
+        type: string
 
 permissions:
   contents: read
@@ -23,7 +37,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Generate Pages snapshot from fixture registry
+      - name: Generate demo Pages snapshot
+        if: ${{ inputs.snapshot_source == 'demo' }}
         env:
           VISION_LIFECYCLE_DB: ${{ runner.temp }}/vision-lifecycle-pages.db
         run: |
@@ -31,6 +46,25 @@ jobs:
           visionops demo > "$RUNNER_TEMP/demo-project.json"
           PROJECT_ID=$(python -c 'import json, pathlib; print(json.loads(pathlib.Path("'"$RUNNER_TEMP"'/demo-project.json").read_text())["id"])')
           visionops export "$PROJECT_ID" --output frontend/public/snapshot.json
+      - name: Use committed project export
+        if: ${{ inputs.snapshot_source == 'committed' }}
+        env:
+          SNAPSHOT_PATH: ${{ inputs.snapshot_path }}
+        run: |
+          test -s "$SNAPSHOT_PATH"
+          cp "$SNAPSHOT_PATH" frontend/public/snapshot.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          snapshot = json.loads(Path("frontend/public/snapshot.json").read_text(encoding="utf-8"))
+          required = {"schema_version", "generated_at", "project", "overview", "datasets", "models", "runs"}
+          missing = sorted(required - set(snapshot))
+          if missing:
+              raise SystemExit(f"snapshot is missing required keys: {missing}")
+          if any("path" in str(key).lower() or "secret" in str(key).lower() for key in snapshot.get("redactions", [])) is False:
+              raise SystemExit("snapshot redaction contract is missing")
+          print(f"Using committed snapshot for {snapshot['project'].get('name', 'unnamed project')}")
+          PY
       - uses: actions/setup-node@v4
         with:
           node-version: 20
