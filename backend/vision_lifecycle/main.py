@@ -430,6 +430,19 @@ def inventory_storage_mapping(project_id: str, storage_id: str, payload: Storage
     return {"count": len(assets), "truncated": len(assets) >= payload.limit, "assets": [as_dict(item) for item in assets]}
 
 
+@app.post("/api/v1/projects/{project_id}/storages/{storage_id}/inventory-job", status_code=201)
+def create_inventory_job(project_id: str, storage_id: str, payload: StorageInventoryRequest, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    mapping = session.get(StorageMapping, storage_id)
+    if not mapping or mapping.project_id != project_id:
+        raise HTTPException(404, "Storage mapping not found")
+    job = Job(project_id=project_id, runner_id="builtin:storage-inventory", command=["builtin:storage-inventory"], input_json={"storage_id": storage_id, "relative_path": payload.relative_path, "recursive": payload.recursive, "limit": payload.limit}, status="queued")
+    session.add(job); session.commit(); session.refresh(job)
+    if os.environ.get("VISION_LIFECYCLE_EXTERNAL_WORKER", "false").lower() != "true":
+        launch(job, [])
+    return as_dict(job)
+
+
 def _version_hash(value: dict) -> str:
     return "sha256:" + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

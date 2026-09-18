@@ -11,7 +11,8 @@ from typing import Any
 from .database import SessionLocal
 from sqlalchemy import select, update
 
-from .models import Job, RunnerProfile
+from .models import DataAsset, Job, RunnerProfile, StorageMapping
+from .storage import inventory as inventory_storage
 
 
 _processes: dict[str, subprocess.Popen[str]] = {}
@@ -60,6 +61,42 @@ def _run_mock_board(job_id: str) -> None:
     _append_log(job_id, "Mock board result collected.\n", status="completed", result=result)
 
 
+def _run_inventory(job_id: str) -> None:
+    _append_log(job_id, "Storage inventory started.\n", status="running")
+    with SessionLocal() as session:
+        job = session.get(Job, job_id)
+        mapping_id = (job.input_json or {}).get("storage_id") if job else None
+        mapping = session.get(StorageMapping, mapping_id) if mapping_id else None
+        relative_path = (job.input_json or {}).get("relative_path", "") if job else ""
+        recursive = bool((job.input_json or {}).get("recursive", True)) if job else True
+        limit = int((job.input_json or {}).get("limit", 1000)) if job else 1000
+        project_id = job.project_id if job else None
+    if not mapping or not project_id:
+        _append_log(job_id, "Storage mapping not found.\n", status="failed")
+        return
+    try:
+        entries = inventory_storage(mapping.root_path, relative_path, recursive, limit)
+        imported = 0
+        with SessionLocal() as session:
+            for entry in entries:
+                current = session.get(Job, job_id)
+                if current and current.status == "cancelling":
+                    _append_log(job_id, f"Inventory cancelled after {imported} files.\n", status="cancelled", result={"count": imported})
+                    return
+                asset = session.query(DataAsset).filter_by(project_id=project_id, storage_id=mapping.id, relative_path=entry["relative_path"]).first()
+                if asset:
+                    asset.size_bytes = entry["size_bytes"]; asset.sha256 = entry["sha256"]; asset.status = "discovered"
+                else:
+                    session.add(DataAsset(project_id=project_id, storage_id=mapping.id, relative_path=entry["relative_path"], size_bytes=entry["size_bytes"], sha256=entry["sha256"], metadata_json={"suffix": entry["suffix"]}))
+                imported += 1
+                if imported % 100 == 0:
+                    session.commit(); _append_log(job_id, f"Inventory processed {imported} files.\n")
+            session.commit()
+        _append_log(job_id, "Storage inventory completed.\n", status="completed", result={"count": imported, "truncated": imported >= limit})
+    except (OSError, ValueError) as error:
+        _append_log(job_id, f"Storage inventory failed: {error}\n", status="failed")
+
+
 def _run_profile(job_id: str, profile_id: str, args: list[str]) -> None:
     with SessionLocal() as session:
         profile = session.get(RunnerProfile, profile_id)
@@ -103,6 +140,8 @@ def _run_profile(job_id: str, profile_id: str, args: list[str]) -> None:
 def run_job(job_id: str, runner_id: str, args: list[str]) -> None:
     if runner_id == "mock-board":
         _run_mock_board(job_id)
+    elif runner_id == "builtin:storage-inventory":
+        _run_inventory(job_id)
     else:
         _run_profile(job_id, runner_id, args)
 

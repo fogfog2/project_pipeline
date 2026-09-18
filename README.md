@@ -18,6 +18,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - Dataset·Model·Run·Quantization·Board·Release를 연결하는 lineage API와 리포트 화면
 - recipe별 onboarding session/step progress와 evidence 저장·재개
 - 실제 Storage/Dataset/Model/Run/Release 근거가 없으면 onboarding 완료 처리를 거부
+- 대용량 Storage inventory를 별도 Job으로 실행하고 로그·취소·재시도 흐름으로 관리
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - 명시적 ONNX input/output profile을 요구하는 local CPU inference preview adapter
 - 모델 등록 화면에서 ONNX/MMDeploy/MMDetection 형식·정밀도·profile을 선택하고 샘플 inference preview 실행

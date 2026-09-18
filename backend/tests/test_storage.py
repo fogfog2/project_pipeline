@@ -1,4 +1,5 @@
 from pathlib import Path
+from time import sleep
 
 import pytest
 from fastapi.testclient import TestClient
@@ -32,6 +33,13 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         inventory = client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/inventory", json={}).json()
         assert inventory["count"] >= 1
         assert client.get(f"/api/v1/projects/{project_id}/assets").json()[0]["sha256"]
+        inventory_job = client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/inventory-job", json={"limit": 100}).json()
+        for _ in range(20):
+            current = next(item for item in client.get(f"/api/v1/projects/{project_id}/jobs").json() if item["id"] == inventory_job["id"])
+            if current["status"] == "completed":
+                break
+            sleep(0.01)
+        assert current["status"] == "completed"
         remapped_root = tmp_path / "remapped"
         remapped_root.mkdir()
         remapped = client.patch(f"/api/v1/projects/{project_id}/storages/{mapping['id']}", json={"root_path": str(remapped_root)})
