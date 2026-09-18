@@ -32,6 +32,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - ONNX image record manifest 기반 batch 평가: classification Top-K/혼동행렬, COCO detection AP, 입력 manifest artifact 보존
 - 평가 Run에 per-class/confusion/error 상세 결과와 evaluator scope를 보존하고 재조회하는 결과 provenance
 - 모델·Dataset·Run 소유 entity에 연결된 artifact hash와 lineage graph 노드
+- 등록된 파일/디렉터리를 `.vision-lifecycle/artifacts`에 관리 사본으로 보존하고 원본·관리 경로를 별도 기록(`VISION_LIFECYCLE_ARTIFACT_ROOT`로 위치 변경 가능)
 - 모델 화면의 checkpoint/config hash 재검증과 drift 시 inference preview 차단
 - 모델·config 교체 시 과거 artifact를 `superseded`로 보존하고 현재 provenance와 구분
 - baseline/candidate alias 변경을 별도 이력으로 보존하고 변경 사유를 모델 화면에서 조회
@@ -111,7 +112,7 @@ visionops backup --output backups/registry.sqlite
 visionops restore --input backups/registry.sqlite
 ```
 
-`export` 결과는 API export와 같은 redaction 규칙을 사용한다. 원본·annotation·checkpoint의 절대 경로, 명령과 환경변수 이름은 포함하지 않는다.
+`export` 결과는 API export와 같은 redaction 규칙을 사용한다. 원본·관리 artifact·annotation·checkpoint의 절대 경로, 명령과 환경변수 이름은 포함하지 않는다.
 
 모델을 baseline 또는 candidate로 승격·교체할 때는 `PATCH /api/v1/projects/{project_id}/models/{model_id}`에 `alias`와 선택적인 `alias_reason`을 보내고, 변경 이력은 `GET /api/v1/projects/{project_id}/models/{model_id}/alias-history`에서 확인한다. 기존 모델을 덮어쓰지 않고 이전 alias와 사유를 남기므로 비교 기준의 이동을 재현할 수 있다.
 

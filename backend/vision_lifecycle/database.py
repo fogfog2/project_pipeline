@@ -41,7 +41,7 @@ def init_database() -> None:
             if name not in run_columns:
                 connection.exec_driver_sql(f"ALTER TABLE runs ADD COLUMN {name} {declaration}")
         artifact_columns = {column["name"] for column in inspect(engine).get_columns("artifacts")}
-        for name, declaration in {"owner_type": "VARCHAR(40)", "owner_id": "VARCHAR(40)"}.items():
+        for name, declaration in {"owner_type": "VARCHAR(40)", "owner_id": "VARCHAR(40)", "managed_path": "TEXT"}.items():
             if name not in artifact_columns:
                 connection.exec_driver_sql(f"ALTER TABLE artifacts ADD COLUMN {name} {declaration}")
         quant_columns = {column["name"] for column in inspect(engine).get_columns("quantization_runs")}

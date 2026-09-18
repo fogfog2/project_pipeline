@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 
 from sqlalchemy import select
@@ -38,6 +40,19 @@ def register_artifact(
         status = "directory"
     elif source_path:
         status = "unavailable"
+    managed_path = None
+    if path and (path.is_file() or path.is_dir()):
+        try:
+            managed_root = Path(os.environ.get("VISION_LIFECYCLE_ARTIFACT_ROOT", ".vision-lifecycle/artifacts"))
+            managed_path = managed_root / project_id / kind / f"{digest or 'directory'}-{path.name}"
+            managed_path.parent.mkdir(parents=True, exist_ok=True)
+            if path.is_dir():
+                shutil.copytree(path, managed_path, dirs_exist_ok=True)
+            else:
+                shutil.copy2(path, managed_path)
+        except OSError as error:
+            notes = f"{notes} Managed artifact copy failed: {error}".strip()
+            managed_path = None
     artifact = Artifact(
         project_id=project_id,
         kind=kind,
@@ -45,6 +60,7 @@ def register_artifact(
         owner_type=owner_type,
         owner_id=owner_id,
         source_path=source_path,
+        managed_path=str(managed_path) if managed_path else None,
         sha256=digest,
         size_bytes=size,
         status=status,

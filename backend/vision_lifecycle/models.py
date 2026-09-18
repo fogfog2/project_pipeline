@@ -189,6 +189,7 @@ class Artifact(Base, Timestamped):
     owner_type: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     owner_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    managed_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     size_bytes: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String(40), default="registered")

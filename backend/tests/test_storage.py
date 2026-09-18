@@ -35,9 +35,10 @@ def test_storage_mapping_archive_is_reversible_and_blocks_operations(tmp_path: P
         assert restored.status_code == 200 and restored.json()["status"] == "available"
 
 
-def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
+def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path, monkeypatch):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    monkeypatch.setenv("VISION_LIFECYCLE_ARTIFACT_ROOT", str(tmp_path / "managed-artifacts"))
     annotation = tmp_path / "instances.json"
     annotation.write_text(Path("examples/mmdetection/annotations/coco8.json").read_text(encoding="utf-8"), encoding="utf-8")
     with TestClient(app) as client:
@@ -78,6 +79,7 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         assert model["artifact_sha256"] and model["config_sha256"]
         artifacts = client.get(f"/api/v1/projects/{project_id}/artifacts").json()
         assert {item["kind"] for item in artifacts} >= {"dataset-annotation", "model", "config"}
+        assert all(item["managed_path"] and Path(item["managed_path"]).is_file() for item in artifacts if item["kind"] in {"dataset-annotation", "model", "config"})
         artifact_verify = client.post(f"/api/v1/projects/{project_id}/models/{model['id']}/verify-artifacts")
         assert artifact_verify.status_code == 200 and artifact_verify.json()["ok"] is True
         artifact.write_bytes(b"changed-model")
@@ -99,6 +101,7 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         # intentionally absent from a Pages-safe snapshot.
         assert str(tmp_path) not in exported.text
         assert all("source_path" not in item for item in exported.json()["artifacts"])
+        assert all("managed_path" not in item for item in exported.json()["artifacts"])
 
 
 def test_dataset_snapshot_and_diff(tmp_path: Path):
