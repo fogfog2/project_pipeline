@@ -29,6 +29,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - regression gate는 baseline의 dataset·evaluator·protocol·scope·class mapping 계약이 맞을 때만 비교하며, 근거가 없으면 INCOMPLETE
 - 명시적 ONNX input/output profile을 요구하는 local CPU inference preview adapter
+- ONNX image record manifest 기반 batch 평가: classification Top-K/혼동행렬, COCO detection AP, 입력 manifest artifact 보존
 - 평가 Run에 per-class/confusion/error 상세 결과와 evaluator scope를 보존하고 재조회하는 결과 provenance
 - 모델·Dataset·Run 소유 entity에 연결된 artifact hash와 lineage graph 노드
 - 모델 화면의 checkpoint/config hash 재검증과 drift 시 inference preview 차단

@@ -208,6 +208,14 @@ class PredictionEvaluationCreate(BaseModel):
     iou_threshold: float = 0.5
 
 
+class OnnxBatchEvaluationCreate(BaseModel):
+    model_id: str
+    dataset_id: str
+    records_path: str
+    evaluator_version: str = "onnx-batch-v1"
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
 class TargetProfileCreate(BaseModel):
     name: str
     version: str = "v1"

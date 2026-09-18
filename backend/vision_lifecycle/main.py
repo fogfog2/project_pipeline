@@ -24,7 +24,7 @@ from .importer import manifest_hash, validate_result_manifest
 from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
 from .artifacts import register_artifact, verify_artifact
@@ -67,9 +67,9 @@ def health():
 @app.get("/api/v1/plugins")
 def plugins():
     return [
-        {"id": "coco", "kind": "dataset", "tasks": ["detection"], "capabilities": ["inspect", "validate", "prediction-evaluation"]},
+        {"id": "coco", "kind": "dataset", "tasks": ["detection"], "capabilities": ["inspect", "validate", "prediction-evaluation", "onnx-batch-evaluation"]},
         {"id": "yolo-txt", "kind": "dataset", "tasks": ["detection"], "capabilities": ["inspect", "validate"]},
-        {"id": "classification", "kind": "dataset", "tasks": ["classification"], "capabilities": ["inspect", "validate"]},
+        {"id": "classification", "kind": "dataset", "tasks": ["classification"], "capabilities": ["inspect", "validate", "onnx-batch-evaluation"]},
         {"id": "mmdetection", "kind": "model", "tasks": ["detection"], "capabilities": ["register", "native-inference", "external-result-import"]},
         {"id": "mmdeploy", "kind": "model", "tasks": ["detection"], "capabilities": ["runtime-inference", "target-profile"]},
         {"id": "mock-board", "kind": "runner", "tasks": ["detection", "classification"], "capabilities": ["run", "result-contract"]},
@@ -933,6 +933,84 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
     )
     session.add(run); session.commit(); session.refresh(run)
     return {"run": as_dict(run), "result": result}
+
+
+@app.post("/api/v1/projects/{project_id}/evaluations/onnx-batch", status_code=201)
+def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, session: Session = Depends(get_session)):
+    """Run an explicitly profiled ONNX model over image records and persist one evaluation Run."""
+    require_project(session, project_id)
+    dataset = session.get(DatasetVersion, payload.dataset_id)
+    model = session.get(ModelVersion, payload.model_id)
+    if not dataset or dataset.project_id != project_id or not model or model.project_id != project_id:
+        raise HTTPException(422, "Model and dataset must belong to this project")
+    if model.format != "onnx" or not model.artifact_path:
+        raise HTTPException(422, "ONNX batch evaluation requires a registered ONNX model artifact")
+    profile = model.metadata_json.get("onnx_profile")
+    if not profile:
+        raise HTTPException(422, "Model metadata must include an explicit onnx_profile")
+    if dataset.content_hash and dataset.content_hash.startswith("sha256:"):
+        current_hash, _ = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
+        if current_hash != dataset.content_hash:
+            raise HTTPException(409, "Dataset source files changed since this version was registered; create a new DatasetVersion")
+    try:
+        records_path = Path(payload.records_path)
+        with records_path.open(encoding="utf-8") as file:
+            records = json.load(file)
+        if not isinstance(records, list) or not records:
+            raise ValueError("ONNX records JSON must be a non-empty list")
+        if any(not isinstance(record, dict) or not record.get("image_path") for record in records):
+            raise ValueError("Every ONNX record must include image_path")
+        resolved_records = []
+        for record in records:
+            image_path = Path(str(record["image_path"]))
+            if not image_path.is_absolute():
+                image_path = records_path.parent / image_path
+            resolved_records.append({**record, "image_path": str(image_path)})
+        predictions = [infer_onnx(model.artifact_path, record["image_path"], profile) for record in resolved_records]
+        if model.task_kind == "classification":
+            class_names = [str(value) for value in dataset.class_names]
+            output_records = []
+            for index, (record, prediction) in enumerate(zip(resolved_records, predictions, strict=True)):
+                top_indices = prediction.get("top_indices", [])
+                top_labels = [class_names[item] if item < len(class_names) else str(item) for item in top_indices[:payload.top_k]]
+                if not top_labels:
+                    raise ValueError(f"ONNX classification returned no scores for record {index}")
+                output_records.append({"image_id": record.get("image_id", str(index)), "ground_truth": record.get("ground_truth"), "prediction": top_labels[0], "top_k": top_labels})
+            if any(item["ground_truth"] is None for item in output_records):
+                raise ValueError("Classification ONNX records must include ground_truth")
+            result = evaluate_classification(output_records)
+            metrics = {key: result[key] for key in ("top1_accuracy", "topk_accuracy", "macro_precision", "macro_recall", "macro_f1", "records")}
+            details = {**result, "records_path": payload.records_path, "inference_provider": predictions[0].get("provider", "unknown")}
+        elif model.task_kind == "detection":
+            if dataset.format != "coco" or not dataset.annotation_path:
+                raise ValueError("Detection ONNX batch evaluation requires a COCO dataset with annotation_path")
+            mapping = model.metadata_json.get("class_mapping")
+            if not isinstance(mapping, dict) or not mapping:
+                raise ValueError("Detection ONNX model metadata must include explicit class_mapping from model labels to COCO category IDs")
+            coco_predictions = []
+            for index, (record, prediction) in enumerate(zip(resolved_records, predictions, strict=True)):
+                image_id = record.get("image_id", index)
+                for item in prediction.get("predictions", []):
+                    label = str(item.get("label"))
+                    if label not in mapping and item.get("label") not in mapping:
+                        raise ValueError(f"Detection class mapping is missing model label {label}")
+                    category_id = mapping.get(label, mapping.get(item.get("label")))
+                    coco_predictions.append({"image_id": image_id, "category_id": int(category_id), "bbox": item["bbox"], "score": item["score"]})
+            result = evaluate_coco_full(dataset.annotation_path, coco_predictions)
+            metrics = {key: value for key, value in result.items() if isinstance(value, (int, float))}
+            details = {key: value for key, value in result.items() if key != "metric_scope"}
+            details.update({"records_path": payload.records_path, "inference_provider": predictions[0].get("provider", "unknown"), "prediction_count": len(coco_predictions)})
+        else:
+            raise ValueError(f"ONNX batch evaluation does not support task_kind {model.task_kind}")
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(422, str(error)) from error
+    run = Run(project_id=project_id, kind="evaluation", name=f"{model.family} ONNX batch evaluation", status="completed", dataset_id=dataset.id, model_id=model.id, config={"evaluator_version": payload.evaluator_version, "protocol": "onnx-batch", "task_kind": model.task_kind, "top_k": payload.top_k, "scope": result.get("metric_scope", "classification")}, metrics=metrics, details=details, environment={"provider": details.get("inference_provider", "unknown"), "runtime": "onnxruntime-cpu"}, notes="ONNX batch inference and evaluation from an explicit image record manifest.")
+    session.add(run); session.flush()
+    prediction_artifact = register_artifact(session, project_id, kind="onnx-records", logical_name=f"{model.name}/{model.version}/{dataset.name}/{dataset.version}/onnx-records", owner_type="run", owner_id=run.id, source_path=payload.records_path, notes="ONNX batch input records")
+    session.flush()
+    run.details = {**details, "records_artifact_id": prediction_artifact.id}
+    session.commit(); session.refresh(run)
+    return {"run": as_dict(run), "result": {"metric_scope": result.get("metric_scope", "classification"), **details}}
 
 
 @app.post("/api/v1/comparisons")
