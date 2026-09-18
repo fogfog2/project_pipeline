@@ -26,7 +26,7 @@ from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
 from .schemas import BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
-from .service import agent_request, compare_models, overview, safe_export, seed_demo
+from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
 from .fingerprints import dataset_fingerprint, file_sha256
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 
@@ -139,6 +139,14 @@ def project_overview(project_id: str, session: Session = Depends(get_session)):
 def get_agent_request(project_id: str, session: Session = Depends(get_session)):
     try:
         return agent_request(session, project_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@app.get("/api/v1/projects/{project_id}/lineage")
+def project_lineage(project_id: str, session: Session = Depends(get_session)):
+    try:
+        return lineage(session, project_id)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
 

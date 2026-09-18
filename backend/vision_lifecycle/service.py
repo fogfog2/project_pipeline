@@ -110,6 +110,57 @@ def agent_request(session: Session, project_id: str) -> dict:
     return {"prompt": prompt, "missing": missing, "paths": supplied_paths}
 
 
+def lineage(session: Session, project_id: str) -> dict:
+    project = session.get(Project, project_id)
+    if not project:
+        raise LookupError("Project not found")
+    datasets = session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()
+    models = session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()
+    runs = session.scalars(select(Run).where(Run.project_id == project_id)).all()
+    quants = session.scalars(select(QuantizationRun).where(QuantizationRun.project_id == project_id)).all()
+    boards = session.scalars(select(BoardBenchmark).where(BoardBenchmark.project_id == project_id)).all()
+    releases = session.scalars(select(Release).where(Release.project_id == project_id)).all()
+    targets = session.scalars(select(TargetProfile).where(TargetProfile.project_id == project_id)).all()
+    nodes = [{"id": project.id, "kind": "project", "label": project.name}]
+    nodes += [{"id": item.id, "kind": "dataset", "label": f"{item.name} {item.version}", "status": item.status} for item in datasets]
+    nodes += [{"id": item.id, "kind": "model", "label": f"{item.family} {item.version}", "status": item.status} for item in models]
+    nodes += [{"id": item.id, "kind": "run", "label": item.name, "status": item.status} for item in runs]
+    nodes += [{"id": item.id, "kind": "quantization", "label": item.name, "status": item.status} for item in quants]
+    nodes += [{"id": item.id, "kind": "board", "label": item.name, "status": item.status} for item in boards]
+    nodes += [{"id": item.id, "kind": "target", "label": f"{item.name} {item.version}"} for item in targets]
+    nodes += [{"id": item.id, "kind": "release", "label": item.name, "status": item.decision} for item in releases]
+    edges = []
+    for dataset in datasets:
+        edges.append({"source": project.id, "target": dataset.id, "relation": "contains"})
+    for model in models:
+        edges.append({"source": project.id, "target": model.id, "relation": "contains"})
+        if model.source_dataset_id:
+            edges.append({"source": model.source_dataset_id, "target": model.id, "relation": "trained_from"})
+    for run in runs:
+        if run.model_id:
+            edges.append({"source": run.model_id, "target": run.id, "relation": run.kind})
+        if run.dataset_id:
+            edges.append({"source": run.dataset_id, "target": run.id, "relation": "evaluated_on"})
+    for quant in quants:
+        edges.append({"source": quant.source_model_id, "target": quant.id, "relation": "quantized"})
+        if quant.output_model_id:
+            edges.append({"source": quant.id, "target": quant.output_model_id, "relation": "produced"})
+        if quant.calibration_set_id:
+            edges.append({"source": quant.calibration_set_id, "target": quant.id, "relation": "calibrated_by"})
+    for board in boards:
+        edges.append({"source": board.model_id, "target": board.id, "relation": "measured"})
+        edges.append({"source": board.target_profile_id, "target": board.id, "relation": "on_target"})
+        if board.evaluation_run_id:
+            edges.append({"source": board.evaluation_run_id, "target": board.id, "relation": "validated_by"})
+    for release in releases:
+        edges.append({"source": release.model_id, "target": release.id, "relation": "released"})
+        if release.evaluation_run_id:
+            edges.append({"source": release.evaluation_run_id, "target": release.id, "relation": "evidence"})
+        if release.baseline_model_id:
+            edges.append({"source": release.baseline_model_id, "target": release.id, "relation": "baseline"})
+    return {"project_id": project_id, "nodes": nodes, "edges": edges}
+
+
 def safe_export(session: Session, project_id: str) -> dict:
     """Create a Pages-safe, portable registry snapshot shared by API and CLI."""
     from .serializers import as_dict

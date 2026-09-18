@@ -39,6 +39,9 @@ def test_demo_api_validates_evaluates_and_redacts():
         assert "storage_root" not in exported["project"]
         assert "annotation_path" not in exported["datasets"][0]
         assert "artifact_path" not in exported["models"][0]
+        graph = client.get(f"/api/v1/projects/{project_id}/lineage")
+        assert graph.status_code == 200
+        assert any(edge["relation"] == "trained_from" for edge in graph.json()["edges"])
 
 
 def test_mock_board_job_completes():
