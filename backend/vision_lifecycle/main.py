@@ -878,8 +878,38 @@ def create_quantization_run(project_id: str, payload: QuantizationRunCreate, ses
     _project_entity(session, ModelVersion, payload.source_model_id, project_id, "Source model")
     _project_entity(session, ModelVersion, payload.output_model_id, project_id, "Output model")
     _project_entity(session, CalibrationSetVersion, payload.calibration_set_id, project_id, "Calibration set")
-    item = QuantizationRun(project_id=project_id, **payload.model_dump())
-    session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+    values = payload.model_dump()
+    item = QuantizationRun(project_id=project_id, **values)
+    session.add(item); session.flush()
+    if payload.encoding_path:
+        encoding_artifact = register_artifact(
+            session,
+            project_id,
+            kind="quantization-encoding",
+            logical_name=f"{item.name}/{item.id}/encoding",
+            owner_type="quantization",
+            owner_id=item.id,
+            source_path=payload.encoding_path,
+            notes="Quantization encoding/scale artifact; verify before comparison.",
+        )
+        session.flush()
+        item.metadata_json = {**(item.metadata_json or {}), "encoding_artifact_id": encoding_artifact.id}
+    session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.post("/api/v1/projects/{project_id}/quantization-runs/{quantization_id}/verify-encoding")
+def verify_quantization_encoding(project_id: str, quantization_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    item = session.get(QuantizationRun, quantization_id)
+    if not item or item.project_id != project_id:
+        raise HTTPException(404, "Quantization run not found")
+    artifact_id = (item.metadata_json or {}).get("encoding_artifact_id")
+    artifact = session.get(Artifact, artifact_id) if artifact_id else None
+    if not artifact or artifact.project_id != project_id:
+        raise HTTPException(422, "Quantization run has no registered encoding artifact")
+    result = verify_artifact(artifact)
+    session.commit()
+    return {"quantization_id": item.id, "ok": result["status"] in {"verified", "managed"}, "artifact": result}
 
 
 @app.post("/api/v1/projects/{project_id}/quantization-runs/{quantization_id}/compare")

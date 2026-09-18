@@ -310,6 +310,7 @@ class TargetProfile(Base, Timestamped):
     target_kind: Mapped[str] = mapped_column(String(80), default="board")
     runtime: Mapped[str] = mapped_column(String(120), default="unknown")
     hardware: Mapped[dict] = mapped_column(JSON, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     notes: Mapped[str] = mapped_column(Text, default="")
 
 

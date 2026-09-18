@@ -234,9 +234,10 @@ def test_target_profile_can_be_linked_to_board_import():
     with TestClient(app) as client:
         project_id = client.post("/api/v1/projects/demo").json()["id"]
         target = client.post(f"/api/v1/projects/{project_id}/targets", json={
-            "name": "Jetson Orin NX", "version": "r36", "runtime": "TensorRT", "hardware": {"power_mode": "15W"},
+            "name": "Jetson Orin NX", "version": "r36", "runtime": "TensorRT", "hardware": {"power_mode": "15W"}, "metadata_json": {"firmware": "r36.2", "accelerator": "DLA0"},
         })
         assert target.status_code == 201
+        assert target.json()["metadata_json"]["accelerator"] == "DLA0"
         linked = client.post(f"/api/v1/projects/{project_id}/results/import", json={"manifest": {
             "schema_version": "1.0", "external_run_id": "BOARD-TARGET-1", "kind": "board", "name": "latency",
             "target_profile_id": target.json()["id"], "metrics": {"latency_ms_p50": 4.2},
@@ -261,6 +262,22 @@ def test_quantization_and_board_lineage_requires_project_owned_references():
         complete = client.post(f"/api/v1/projects/{project_id}/board-benchmarks", json={"name": "board-v2", "model_id": model["id"], "target_profile_id": target["id"], "metrics": {"latency_ms_p50": 4.2}, "measurement": {"source": "external", "scope": "batch", "batch_size": 1, "warmup_runs": 5, "iterations": 100, "units": {"latency_ms_p50": "ms"}}})
         assert complete.status_code == 201
         assert complete.json()["measurement"]["contract_validation"]["status"] == "passed"
+
+
+def test_quantization_encoding_artifact_is_registered_and_verified(tmp_path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    encoding = tmp_path / "encoding.json"
+    encoding.write_text('{"scale": 0.25}', encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "encoding-artifact"}).json()["id"]
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "fp32", "version": "v1", "family": "fixture"}).json()
+        created = client.post(f"/api/v1/projects/{project_id}/quantization-runs", json={"name": "int8", "source_model_id": model["id"], "encoding_path": str(encoding), "method": "ptq"})
+        assert created.status_code == 201, created.text
+        assert created.json()["metadata_json"]["encoding_artifact_id"]
+        verified = client.post(f"/api/v1/projects/{project_id}/quantization-runs/{created.json()['id']}/verify-encoding")
+        assert verified.status_code == 200
+        assert verified.json()["ok"] is True
 
 
 def test_quantization_loss_and_target_gap_require_compatible_evaluations():

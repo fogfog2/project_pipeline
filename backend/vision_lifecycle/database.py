@@ -76,3 +76,6 @@ def init_database() -> None:
             connection.exec_driver_sql("ALTER TABLE model_versions ADD COLUMN artifact_sha256 VARCHAR(64)")
         if "config_sha256" not in model_columns:
             connection.exec_driver_sql("ALTER TABLE model_versions ADD COLUMN config_sha256 VARCHAR(64)")
+        target_columns = {column["name"] for column in inspect(engine).get_columns("target_profiles")}
+        if "metadata_json" not in target_columns:
+            connection.exec_driver_sql("ALTER TABLE target_profiles ADD COLUMN metadata_json JSON NOT NULL DEFAULT '{}'")

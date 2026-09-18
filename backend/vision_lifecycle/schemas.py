@@ -253,6 +253,7 @@ class TargetProfileCreate(BaseModel):
     target_kind: str = "board"
     runtime: str = "unknown"
     hardware: dict[str, Any] = Field(default_factory=dict)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
 
 
