@@ -387,6 +387,20 @@ def test_archive_impact_lists_lineage_dependencies_before_state_change():
         assert client.get(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/impact").json()["entity"]["status"] == "draft"
 
 
+def test_storage_impact_includes_inventory_assets_and_jobs():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "storage-impact"}).json()["id"]
+        storage = client.post(f"/api/v1/projects/{project_id}/storages", json={"name": "workspace", "root_path": "."}).json()
+        inventory = client.post(f"/api/v1/projects/{project_id}/storages/{storage['id']}/inventory", json={"relative_path": "examples", "limit": 2})
+        assert inventory.status_code == 200
+        client.post(f"/api/v1/projects/{project_id}/storages/{storage['id']}/inventory-job", json={"recursive": False, "limit": 2})
+        impact = client.get(f"/api/v1/projects/{project_id}/storages/{storage['id']}/impact")
+        assert impact.status_code == 200
+        assert {item["kind"] for item in impact.json()["dependencies"]} >= {"asset", "inventory-job"}
+
+
 def test_split_validation_rejects_duplicate_items_and_group_leakage():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

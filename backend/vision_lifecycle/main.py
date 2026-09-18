@@ -472,6 +472,20 @@ def archive_storage(project_id: str, storage_id: str, session: Session = Depends
     return as_dict(mapping)
 
 
+@app.get("/api/v1/projects/{project_id}/storages/{storage_id}/impact")
+def storage_impact(project_id: str, storage_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    mapping = session.get(StorageMapping, storage_id)
+    if not mapping or mapping.project_id != project_id:
+        raise HTTPException(404, "Storage mapping not found")
+    assets = session.scalars(select(DataAsset).where(DataAsset.project_id == project_id, DataAsset.storage_id == storage_id)).all()
+    jobs = session.scalars(select(Job).where(Job.project_id == project_id, Job.runner_id == "builtin:storage-inventory")).all()
+    jobs = [job for job in jobs if isinstance(job.input_json, dict) and job.input_json.get("storage_id") == storage_id]
+    dependencies = ([{"kind": "asset", "id": item.id, "name": item.relative_path, "status": item.status} for item in assets]
+        + [{"kind": "inventory-job", "id": item.id, "name": item.runner_id, "status": item.status} for item in jobs])
+    return {"entity": {"kind": "storage", "id": mapping.id, "name": mapping.name, "status": mapping.status}, "dependencies": dependencies, "blocking": [item for item in dependencies if item["status"] not in {"archived", "failed", "cancelled", "completed"}]}
+
+
 @app.post("/api/v1/projects/{project_id}/storages/{storage_id}/browse")
 def browse_storage_mapping(project_id: str, storage_id: str, payload: StorageBrowseRequest, session: Session = Depends(get_session)):
     require_project(session, project_id)
