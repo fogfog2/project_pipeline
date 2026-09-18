@@ -77,6 +77,31 @@ class VersionDefinitionCreate(BaseModel):
     status: str = "draft"
 
 
+class QuantizationRunCreate(BaseModel):
+    name: str
+    source_model_id: str
+    output_model_id: str | None = None
+    calibration_set_id: str | None = None
+    method: str = "unknown"
+    weight_dtype: str = "unknown"
+    activation_dtype: str = "unknown"
+    encoding_path: str | None = None
+    status: str = "registered"
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class BoardBenchmarkCreate(BaseModel):
+    name: str
+    model_id: str
+    target_profile_id: str
+    evaluation_run_id: str | None = None
+    status: str = "registered"
+    metrics: dict[str, float] = Field(default_factory=dict)
+    measurement: dict[str, Any] = Field(default_factory=dict)
+    raw_output_hash: str | None = None
+    notes: str = ""
+
+
 class ModelUpdate(BaseModel):
     name: str | None = None
     alias: str | None = None

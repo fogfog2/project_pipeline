@@ -20,10 +20,10 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, Release, Run, RunnerProfile, SplitVersion, StorageMapping, TargetProfile
+from .models import BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelVersion, Project, QuantizationRun, Release, Run, RunnerProfile, SplitVersion, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, TargetProfileCreate, VersionDefinitionCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, overview, safe_export, seed_demo
 from .fingerprints import dataset_fingerprint, file_sha256
@@ -387,6 +387,49 @@ def create_calibration_set(project_id: str, payload: VersionDefinitionCreate, se
     require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
     value = {"name": payload.name, "version": payload.version, "sampling": payload.sampling, "preprocessing": payload.preprocessing, "dataset_id": payload.dataset_id}
     item = CalibrationSetVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, sampling=payload.sampling, preprocessing=payload.preprocessing, status=payload.status, content_hash=_version_hash(value))
+    session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+def _project_entity(session: Session, entity, identifier: str | None, project_id: str, label: str):
+    if not identifier:
+        return None
+    value = session.get(entity, identifier)
+    if not value or value.project_id != project_id:
+        raise HTTPException(422, f"{label} reference must belong to this project")
+    return value
+
+
+@app.get("/api/v1/projects/{project_id}/quantization-runs")
+def list_quantization_runs(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(QuantizationRun).where(QuantizationRun.project_id == project_id).order_by(QuantizationRun.created_at.desc())).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/quantization-runs", status_code=201)
+def create_quantization_run(project_id: str, payload: QuantizationRunCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    _project_entity(session, ModelVersion, payload.source_model_id, project_id, "Source model")
+    _project_entity(session, ModelVersion, payload.output_model_id, project_id, "Output model")
+    _project_entity(session, CalibrationSetVersion, payload.calibration_set_id, project_id, "Calibration set")
+    item = QuantizationRun(project_id=project_id, **payload.model_dump())
+    session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.get("/api/v1/projects/{project_id}/board-benchmarks")
+def list_board_benchmarks(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(BoardBenchmark).where(BoardBenchmark.project_id == project_id).order_by(BoardBenchmark.created_at.desc())).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/board-benchmarks", status_code=201)
+def create_board_benchmark(project_id: str, payload: BoardBenchmarkCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    _project_entity(session, ModelVersion, payload.model_id, project_id, "Model")
+    _project_entity(session, TargetProfile, payload.target_profile_id, project_id, "Target profile")
+    evaluation = _project_entity(session, Run, payload.evaluation_run_id, project_id, "Evaluation run")
+    if evaluation and evaluation.kind != "evaluation":
+        raise HTTPException(422, "Board benchmark evaluation_run_id must reference an evaluation run")
+    item = BoardBenchmark(project_id=project_id, **payload.model_dump())
     session.add(item); session.commit(); session.refresh(item); return as_dict(item)
 
 

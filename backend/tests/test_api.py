@@ -109,6 +109,20 @@ def test_target_profile_can_be_linked_to_board_import():
         assert linked.json()["run"]["config"]["target_profile_id"] == target.json()["id"]
 
 
+def test_quantization_and_board_lineage_requires_project_owned_references():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "quant-lineage"}).json()["id"]
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "fp32", "version": "v1", "family": "fixture"}).json()
+        calibration = client.post(f"/api/v1/projects/{project_id}/calibration-sets", json={"name": "cal", "version": "v1", "sampling": {"count": 10}}).json()
+        quant = client.post(f"/api/v1/projects/{project_id}/quantization-runs", json={"name": "int8", "source_model_id": model["id"], "calibration_set_id": calibration["id"], "method": "ptq", "activation_dtype": "int8"})
+        assert quant.status_code == 201
+        target = client.post(f"/api/v1/projects/{project_id}/targets", json={"name": "board", "version": "v1"}).json()
+        benchmark = client.post(f"/api/v1/projects/{project_id}/board-benchmarks", json={"name": "board-v1", "model_id": model["id"], "target_profile_id": target["id"], "metrics": {"latency_ms_p50": 4.2}, "measurement": {"batch_size": 1, "warmup_runs": 5}})
+        assert benchmark.status_code == 201
+
+
 def test_classification_evaluation_api():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

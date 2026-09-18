@@ -126,6 +126,37 @@ class CalibrationSetVersion(Base, Timestamped):
     content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
+class QuantizationRun(Base, Timestamped):
+    __tablename__ = "quantization_runs"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("QUANT"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    source_model_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id"))
+    output_model_id: Mapped[str | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
+    calibration_set_id: Mapped[str | None] = mapped_column(ForeignKey("calibration_set_versions.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    method: Mapped[str] = mapped_column(String(100), default="unknown")
+    weight_dtype: Mapped[str] = mapped_column(String(40), default="unknown")
+    activation_dtype: Mapped[str] = mapped_column(String(40), default="unknown")
+    encoding_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="registered")
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class BoardBenchmark(Base, Timestamped):
+    __tablename__ = "board_benchmarks"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("BOARD"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    model_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id"))
+    target_profile_id: Mapped[str] = mapped_column(ForeignKey("target_profiles.id"))
+    evaluation_run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(40), default="registered")
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    measurement: Mapped[dict] = mapped_column(JSON, default=dict)
+    raw_output_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
 class ModelVersion(Base, Timestamped):
     __tablename__ = "model_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("MODEL"))
