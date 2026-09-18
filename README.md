@@ -37,6 +37,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 선택 의존성 환경에서 MMDeploy runtime model directory preview adapter와 versioned target profile
 - versioned external result manifest import와 외부 run ID의 idempotency/conflict 검사
 - 데이터·모델·평가 결과의 명시적 lineage
+- 모델 등록 화면에서 학습 DatasetVersion과 외부 `training` Run을 각각 선택하며, lineage graph가 `training run → model` 관계를 표시
 - 등록 가능한 checkpoint/config 파일의 SHA-256 provenance 기록
 - label schema, split, evaluation set, calibration set의 versioned contract와 content hash
 - COCO annotation image/category/bbox 샘플 preview

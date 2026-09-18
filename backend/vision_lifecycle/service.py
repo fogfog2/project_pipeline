@@ -175,6 +175,8 @@ def lineage(session: Session, project_id: str) -> dict:
         edges.append({"source": project.id, "target": model.id, "relation": "contains"})
         if model.source_dataset_id:
             edges.append({"source": model.source_dataset_id, "target": model.id, "relation": "trained_from"})
+        if model.source_run_id:
+            edges.append({"source": model.source_run_id, "target": model.id, "relation": "produced_by"})
     for run in runs:
         if run.model_id:
             edges.append({"source": run.model_id, "target": run.id, "relation": run.kind})

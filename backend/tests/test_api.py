@@ -274,3 +274,15 @@ def test_model_alias_history_records_reason_and_is_exported():
         assert history.json()[0]["reason"] == "선정된 기준 모델로 승격"
         exported = client.get(f"/api/v1/projects/{project_id}/export").json()
         assert exported["model_alias_history"][0]["model_id"] == model["id"]
+
+
+def test_model_training_run_lineage_is_explicit():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "training-lineage"}).json()["id"]
+        run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "training", "name": "external train", "status": "completed", "config": {"commit": "abc123"}}).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "trained", "version": "v1", "family": "rtmdet", "source_run_id": run["id"]})
+        assert model.status_code == 201
+        graph = client.get(f"/api/v1/projects/{project_id}/lineage").json()
+        assert {edge["relation"] for edge in graph["edges"] if edge["target"] == model.json()["id"]} >= {"contains", "produced_by"}
