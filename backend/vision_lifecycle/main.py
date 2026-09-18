@@ -35,6 +35,7 @@ from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
 from .split_validation import validate_split_definition
 from .calibration_validation import validate_calibration_definition
 from .evaluation_validation import validate_evaluation_definition
+from .board_validation import validate_board_measurement
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 from .audit import record_audit
 
@@ -934,7 +935,11 @@ def create_board_benchmark(project_id: str, payload: BoardBenchmarkCreate, sessi
     evaluation = _project_entity(session, Run, payload.evaluation_run_id, project_id, "Evaluation run")
     if evaluation and evaluation.kind != "evaluation":
         raise HTTPException(422, "Board benchmark evaluation_run_id must reference an evaluation run")
-    item = BoardBenchmark(project_id=project_id, **payload.model_dump())
+    values = payload.model_dump()
+    values["measurement"] = {**payload.measurement, "contract_validation": validate_board_measurement(payload.metrics, payload.measurement)}
+    if values["measurement"]["contract_validation"]["status"] == "failed":
+        raise HTTPException(422, f"Invalid board measurement: {values['measurement']['contract_validation']['errors']}")
+    item = BoardBenchmark(project_id=project_id, **values)
     session.add(item); session.commit(); session.refresh(item); return as_dict(item)
 
 

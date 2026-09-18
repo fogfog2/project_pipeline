@@ -207,6 +207,10 @@ def test_quantization_and_board_lineage_requires_project_owned_references():
         target = client.post(f"/api/v1/projects/{project_id}/targets", json={"name": "board", "version": "v1"}).json()
         benchmark = client.post(f"/api/v1/projects/{project_id}/board-benchmarks", json={"name": "board-v1", "model_id": model["id"], "target_profile_id": target["id"], "metrics": {"latency_ms_p50": 4.2}, "measurement": {"batch_size": 1, "warmup_runs": 5}})
         assert benchmark.status_code == 201
+        assert benchmark.json()["measurement"]["contract_validation"]["status"] == "incomplete"
+        complete = client.post(f"/api/v1/projects/{project_id}/board-benchmarks", json={"name": "board-v2", "model_id": model["id"], "target_profile_id": target["id"], "metrics": {"latency_ms_p50": 4.2}, "measurement": {"source": "external", "scope": "batch", "batch_size": 1, "warmup_runs": 5, "iterations": 100, "units": {"latency_ms_p50": "ms"}}})
+        assert complete.status_code == 201
+        assert complete.json()["measurement"]["contract_validation"]["status"] == "passed"
 
 
 def test_quantization_loss_and_target_gap_require_compatible_evaluations():

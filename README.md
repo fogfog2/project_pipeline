@@ -24,6 +24,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 실험 화면에서 외부 training Run의 typed provenance(framework·commit·seed·split·label schema·unknown)와 dataset·config·metrics·environment·external ID를 등록하고 모델 연결에 재사용
 - 실험 화면에서 학습·양자화·보드 표준 result manifest를 직접 import하고 동일 external ID의 idempotency/충돌을 확인
 - 명시적 FP32·QuantSim·Target 평가 계약 검증과 Quantization Loss·Target Gap 비교 결과 저장
+- 보드 benchmark metric 유한값과 source/scope/batch/warmup/iterations/units 계약 검증(누락은 `incomplete`)
 - Dataset·Model·Run·Quantization·Board·Release를 연결하는 lineage API와 리포트 화면
 - recipe별 onboarding session/step progress와 evidence 저장·재개
 - 온보딩 화면에 단계별 readiness와 막힌 이유를 표시하고, 준비되지 않은 단계의 완료 처리를 차단
