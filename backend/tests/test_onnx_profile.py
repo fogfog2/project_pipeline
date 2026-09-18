@@ -63,3 +63,37 @@ def test_onnx_batch_classification_evaluation_persists_run_and_input_artifact(tm
         run = response.json()["run"]
         assert run["details"]["records_artifact_id"]
         assert any(item["kind"] == "onnx-records" for item in client.get(f"/api/v1/projects/{project_id}/artifacts").json())
+
+
+def test_onnx_batch_detection_requires_and_uses_explicit_class_mapping(tmp_path: Path):
+    onnx = pytest.importorskip("onnx")
+    from PIL import Image
+    from onnx import TensorProto, helper
+
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    model_path = tmp_path / "detector.onnx"
+    constants = [
+        helper.make_node("Constant", [], ["boxes"], value=helper.make_tensor("boxes_value", TensorProto.FLOAT, [1, 4], [120, 85, 118, 290])),
+        helper.make_node("Constant", [], ["scores"], value=helper.make_tensor("scores_value", TensorProto.FLOAT, [1], [0.99])),
+        helper.make_node("Constant", [], ["labels"], value=helper.make_tensor("labels_value", TensorProto.INT64, [1], [0])),
+    ]
+    graph = helper.make_graph(constants, "constant-detector", [helper.make_tensor_value_info("images", TensorProto.FLOAT, [1, 3, 2, 2])], [
+        helper.make_tensor_value_info("boxes", TensorProto.FLOAT, [1, 4]), helper.make_tensor_value_info("scores", TensorProto.FLOAT, [1]), helper.make_tensor_value_info("labels", TensorProto.INT64, [1]),
+    ])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 10
+    onnx.save(model, model_path)
+    image_path = tmp_path / "demo.jpg"
+    Image.new("RGB", (2, 2), (1, 2, 3)).save(image_path)
+    annotation = tmp_path / "coco.json"
+    annotation.write_text(Path("examples/mmdetection/annotations/coco8.json").read_text(encoding="utf-8"), encoding="utf-8")
+    records = tmp_path / "records.json"
+    records.write_text('[{"image_path":"demo.jpg","image_id":1}]', encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "onnx-detection", "task_kind": "detection"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "coco", "version": "v1", "task_kind": "detection", "format": "coco", "annotation_path": str(annotation)}).json()
+        registered = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "detector", "version": "v1", "family": "fixture-detector", "task_kind": "detection", "format": "onnx", "artifact_path": str(model_path), "metadata_json": {"onnx_profile": {"task_kind": "detection", "input_name": "images", "input_size": [2, 2], "outputs": {"boxes": "boxes", "scores": "scores", "labels": "labels"}}, "class_mapping": {"0": 1}}}).json()
+        response = client.post(f"/api/v1/projects/{project_id}/evaluations/onnx-batch", json={"model_id": registered["id"], "dataset_id": dataset["id"], "records_path": str(records)})
+        assert response.status_code == 201, response.text
+        assert response.json()["run"]["details"]["prediction_count"] == 1
