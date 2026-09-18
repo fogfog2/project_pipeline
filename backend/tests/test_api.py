@@ -65,10 +65,15 @@ def test_mock_board_job_completes():
 def test_restart_marks_active_jobs_interrupted():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    from vision_lifecycle.database import SessionLocal
+    from vision_lifecycle.models import Project
     with TestClient(app) as client:
-        project_id = client.post("/api/v1/projects", json={"name": "restart-project"}).json()["id"]
-        job = client.post(f"/api/v1/projects/{project_id}/jobs", json={"runner_id": "mock-board"}).json()
-        from vision_lifecycle.database import SessionLocal
+        with SessionLocal() as session:
+            project = Project(name="restart-project")
+            session.add(project); session.flush()
+            item = Job(project_id=project.id, runner_id="mock-board", command=["builtin:mock-board"], input_json={"_runner_args": []}, status="running")
+            session.add(item); session.commit(); project_id, job_id = project.id, item.id
+        job = {"id": job_id}
         with SessionLocal() as session:
             item = session.get(Job, job["id"])
             item.status = "running"
@@ -105,6 +110,9 @@ def test_onboarding_session_persists_step_evidence():
         created = client.post(f"/api/v1/projects/{project_id}/onboarding", json={"recipe_id": "mmdetection-onboarding"})
         assert created.status_code == 201
         assert len(created.json()["steps"]) == 9
+        blocked = client.patch(f"/api/v1/projects/{project_id}/onboarding/steps/storage", json={"status": "completed"})
+        assert blocked.status_code == 409
+        client.post(f"/api/v1/projects/{project_id}/storages", json={"name": "workspace", "root_path": "."})
         updated = client.patch(f"/api/v1/projects/{project_id}/onboarding/steps/storage", json={"status": "completed", "evidence": {"storage_id": "STORE-1"}})
         assert updated.status_code == 200
         loaded = client.get(f"/api/v1/projects/{project_id}/onboarding").json()

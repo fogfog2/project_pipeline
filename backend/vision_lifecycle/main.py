@@ -90,6 +90,36 @@ _RECIPE_STEPS = {
 }
 
 
+def _step_readiness(session: Session, project_id: str, step_id: str) -> tuple[bool, str]:
+    project = session.get(Project, project_id)
+    if step_id == "project":
+        return bool(project), "project exists"
+    if step_id == "storage":
+        ready = session.scalar(select(StorageMapping.id).where(StorageMapping.project_id == project_id, StorageMapping.status == "available")) is not None
+        return ready, "available storage mapping is required"
+    if step_id == "data":
+        ready = session.scalar(select(DatasetVersion.id).where(DatasetVersion.project_id == project_id, DatasetVersion.status != "archived")) is not None
+        return ready, "a non-archived DatasetVersion is required"
+    if step_id == "contracts":
+        ready = any(session.scalar(select(entity.id).where(entity.project_id == project_id)) is not None for entity in (LabelSchemaVersion, SplitVersion, EvaluationSetVersion, CalibrationSetVersion))
+        return ready, "at least one versioned data contract is required"
+    if step_id in {"model", "rtmdet", "yolox"}:
+        query = select(ModelVersion).where(ModelVersion.project_id == project_id, ModelVersion.status != "archived")
+        models = session.scalars(query).all()
+        if step_id == "rtmdet":
+            models = [item for item in models if "rtmdet" in item.family.lower()]
+        elif step_id == "yolox":
+            models = [item for item in models if "yolox" in item.family.lower()]
+        return bool(models), f"a matching {step_id} ModelVersion is required"
+    if step_id == "evaluation":
+        return session.scalar(select(Run.id).where(Run.project_id == project_id, Run.kind == "evaluation", Run.status == "completed")) is not None, "a completed evaluation run is required"
+    if step_id == "comparison":
+        return all(session.scalar(select(ModelVersion.id).where(ModelVersion.project_id == project_id, ModelVersion.alias == alias)) is not None for alias in ("baseline", "candidate")), "baseline and candidate aliases are required"
+    if step_id == "report":
+        return session.scalar(select(Release.id).where(Release.project_id == project_id)) is not None, "a Release decision is required"
+    return True, "ready"
+
+
 @app.get("/api/v1/projects/{project_id}/onboarding")
 def get_onboarding(project_id: str, session: Session = Depends(get_session)):
     project = require_project(session, project_id)
@@ -125,6 +155,10 @@ def update_onboarding_step(project_id: str, step_id: str, payload: StepProgressU
     step = session.scalar(select(StepProgress).where(StepProgress.session_id == onboarding.id, StepProgress.step_id == step_id))
     if not step:
         raise HTTPException(404, "Onboarding step not found")
+    if payload.status == "completed":
+        ready, reason = _step_readiness(session, project_id, step_id)
+        if not ready:
+            raise HTTPException(409, f"Step is not ready: {reason}")
     step.status = payload.status; step.evidence = payload.evidence
     steps = session.scalars(select(StepProgress).where(StepProgress.session_id == onboarding.id)).all()
     onboarding.status = "completed" if steps and all(item.status in {"completed", "skipped"} for item in steps) else "active"
