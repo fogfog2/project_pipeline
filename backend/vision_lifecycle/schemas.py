@@ -163,6 +163,7 @@ class RunCreate(BaseModel):
     dataset_id: str | None = None
     model_id: str | None = None
     parent_run_id: str | None = None
+    external_run_id: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     metrics: dict[str, float] = Field(default_factory=dict)
     details: dict[str, Any] = Field(default_factory=dict)

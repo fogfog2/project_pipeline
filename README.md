@@ -20,6 +20,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 실패·timeout·cancelled·interrupted 작업을 원본 입력 snapshot으로 명시적으로 재시도
 - 작업 화면에서 전체 로그와 exit code/runner 결과를 펼쳐 보고, external worker 모드에서는 재시도 작업을 queue에 남겨 worker가 가져가도록 처리
 - typed QuantizationRun과 BoardBenchmark 등록·조회, calibration/model/target/evaluation lineage 검증
+- 실험 화면에서 외부 training Run의 dataset·config·metrics·environment·external ID를 등록하고 모델 연결에 재사용
 - 명시적 FP32·QuantSim·Target 평가 계약 검증과 Quantization Loss·Target Gap 비교 결과 저장
 - Dataset·Model·Run·Quantization·Board·Release를 연결하는 lineage API와 리포트 화면
 - recipe별 onboarding session/step progress와 evidence 저장·재개

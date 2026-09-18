@@ -159,6 +159,20 @@ def test_result_import_is_idempotent_and_detects_conflict():
         assert "measurement_path" not in exported_run["details"]
 
 
+def test_training_run_registration_is_idempotent_and_detects_external_conflict():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "training-import"}).json()["id"]
+        payload = {"kind": "training", "name": "train-v1", "external_run_id": "TRAIN-1", "config": {"commit": "abc"}, "metrics": {"loss": 0.2}}
+        first = client.post(f"/api/v1/projects/{project_id}/runs", json=payload)
+        same = client.post(f"/api/v1/projects/{project_id}/runs", json=payload)
+        changed = client.post(f"/api/v1/projects/{project_id}/runs", json={**payload, "metrics": {"loss": 0.1}})
+        assert first.status_code == 201 and same.status_code == 200
+        assert same.json()["id"] == first.json()["id"]
+        assert changed.status_code == 409
+
+
 def test_target_profile_can_be_linked_to_board_import():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

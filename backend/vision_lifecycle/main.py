@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy import select
@@ -880,14 +880,24 @@ def list_runs(project_id: str, session: Session = Depends(get_session)):
 
 
 @app.post("/api/v1/projects/{project_id}/runs", status_code=201)
-def create_run(project_id: str, payload: RunCreate, session: Session = Depends(get_session)):
+def create_run(project_id: str, payload: RunCreate, response: Response, session: Session = Depends(get_session)):
     require_project(session, project_id)
     for entity, label in ((session.get(DatasetVersion, payload.dataset_id) if payload.dataset_id else None, "Dataset"), (session.get(ModelVersion, payload.model_id) if payload.model_id else None, "Model"), (session.get(Run, payload.parent_run_id) if payload.parent_run_id else None, "Parent run")):
         if entity and entity.project_id != project_id:
             raise HTTPException(422, f"{label} must belong to this project")
         if (payload.dataset_id and label == "Dataset" or payload.model_id and label == "Model" or payload.parent_run_id and label == "Parent run") and not entity:
             raise HTTPException(422, f"{label} not found")
-    run = Run(project_id=project_id, **payload.model_dump())
+    values = payload.model_dump()
+    if payload.external_run_id:
+        existing = session.scalar(select(Run).where(Run.project_id == project_id, Run.external_run_id == payload.external_run_id))
+        import_hash = _version_hash(values)
+        if existing:
+            if existing.import_hash == import_hash:
+                response.status_code = 200
+                return as_dict(existing)
+            raise HTTPException(409, "An external run with this ID exists but its content differs")
+        values["import_hash"] = import_hash
+    run = Run(project_id=project_id, **values)
     session.add(run); session.commit(); session.refresh(run)
     return as_dict(run)
 
