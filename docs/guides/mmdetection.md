@@ -26,7 +26,7 @@ npm run dev
 
 API를 8001번으로 실행한 경우에는 마지막 줄을 `VITE_API_PORT=8001 npm run dev`로 바꾼다.
 
-UI에서 **MMDetection 데모 시작**을 선택한다. 이 과정은 metadata fixture를 등록한다. 모델 checkpoint, 이미지, 실제 board는 다운로드하지 않는다.
+UI에서 **빈 프로젝트 만들기** 또는 **MMDetection · YOLOX 실습 시작(빈 상태)**을 선택한다. 프로젝트와 실습 recipe만 생성하며 모델 checkpoint, 이미지, 점수, 실제 board 결과는 자동 등록하지 않는다. 이후 연결·설정에서 storage root를 등록하고 데이터·모델·평가를 단계별로 추가한다.
 
 공식 pretrained RTMDet-tiny·YOLOX-s artifact가 필요하면 `examples/mmdetection/scripts/prepare-official-models.sh`를 실행한다. 이 download는 registry 등록과 별개이며, 완료 후 사용자가 config·checkpoint 경로를 명시적으로 연결한다.
 
