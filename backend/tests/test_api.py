@@ -106,6 +106,23 @@ def test_external_worker_claims_one_queued_job():
     assert worker_once() is False
 
 
+def test_retry_keeps_queued_for_external_worker(monkeypatch):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    monkeypatch.setenv("VISION_LIFECYCLE_EXTERNAL_WORKER", "true")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "external-retry"}).json()["id"]
+        created = client.post(f"/api/v1/projects/{project_id}/jobs", json={"runner_id": "mock-board"}).json()
+        from vision_lifecycle.database import SessionLocal
+        with SessionLocal() as session:
+            job = session.get(Job, created["id"])
+            job.status = "failed"
+            session.commit()
+        retried = client.post(f"/api/v1/projects/{project_id}/jobs/{created['id']}/retry")
+        assert retried.status_code == 201
+        assert retried.json()["status"] == "queued"
+
+
 def test_onboarding_session_persists_step_evidence():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

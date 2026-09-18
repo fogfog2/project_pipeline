@@ -1025,7 +1025,8 @@ def retry_job(project_id: str, job_id: str, session: Session = Depends(get_sessi
     retry_input["retry_of"] = original.id
     new_job = Job(project_id=project_id, runner_id=original.runner_id, command=original.command, input_json={**retry_input, "_runner_args": args}, status="queued")
     session.add(new_job); session.commit(); session.refresh(new_job)
-    launch(new_job, args)
+    if os.environ.get("VISION_LIFECYCLE_EXTERNAL_WORKER", "false").lower() != "true":
+        launch(new_job, args)
     return as_dict(new_job)
 
 
