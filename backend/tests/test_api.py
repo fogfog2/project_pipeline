@@ -414,6 +414,10 @@ def test_evaluation_set_is_persisted_and_must_match_dataset():
         evaluation_set = client.post(f"/api/v1/projects/{project_id}/evaluation-sets", json={
             "name": "core", "version": "v1", "dataset_id": dataset["id"], "purpose": "core", "definition": {"items": [1]},
         }).json()
+        assert evaluation_set["validation"]["status"] == "passed"
+        revalidated = client.post(f"/api/v1/projects/{project_id}/evaluation-sets/{evaluation_set['id']}/validate")
+        assert revalidated.status_code == 200
+        assert revalidated.json()["validation"]["selected_item_count"] == 1
         valid = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
             "model_id": model["id"], "dataset_id": dataset["id"], "evaluation_set_id": evaluation_set["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",
         })

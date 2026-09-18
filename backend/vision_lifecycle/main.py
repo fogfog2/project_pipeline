@@ -34,6 +34,7 @@ from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
 from .split_validation import validate_split_definition
 from .calibration_validation import validate_calibration_definition
+from .evaluation_validation import validate_evaluation_definition
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 from .audit import record_audit
 
@@ -626,6 +627,8 @@ def _evaluation_item_keys(evaluation_set: EvaluationSetVersion | None) -> set[st
         if value is None or isinstance(value, bool) or not isinstance(value, (str, int, float)):
             raise HTTPException(422, "Evaluation set items must contain scalar image/item identifiers")
         keys.add(str(value))
+    if not keys:
+        raise HTTPException(422, "Evaluation set must contain at least one item")
     return keys
 
 
@@ -758,10 +761,26 @@ def list_evaluation_sets(project_id: str, session: Session = Depends(get_session
 
 @app.post("/api/v1/projects/{project_id}/evaluation-sets", status_code=201)
 def create_evaluation_set(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
-    require_project(session, project_id); _version_dataset(session, project_id, payload.dataset_id)
+    require_project(session, project_id)
+    dataset = _version_dataset(session, project_id, payload.dataset_id)
     value = {"name": payload.name, "version": payload.version, "purpose": payload.purpose, "definition": payload.definition, "dataset_id": payload.dataset_id}
-    item = EvaluationSetVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, purpose=payload.purpose, definition=payload.definition, status=payload.status, content_hash=_version_hash(value))
+    validation = validate_evaluation_definition(payload.definition, dataset.snapshot if dataset else None)
+    item = EvaluationSetVersion(project_id=project_id, dataset_id=payload.dataset_id, name=payload.name, version=payload.version, purpose=payload.purpose, definition=payload.definition, validation=validation, status=payload.status, content_hash=_version_hash(value))
     session.add(item); session.commit(); session.refresh(item); return as_dict(item)
+
+
+@app.post("/api/v1/projects/{project_id}/evaluation-sets/{evaluation_set_id}/validate")
+def validate_evaluation_set(project_id: str, evaluation_set_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    item = session.get(EvaluationSetVersion, evaluation_set_id)
+    if not item or item.project_id != project_id:
+        raise HTTPException(404, "Evaluation set not found")
+    dataset = _version_dataset(session, project_id, item.dataset_id)
+    item.validation = validate_evaluation_definition(item.definition, dataset.snapshot if dataset else None)
+    if item.validation["status"] == "passed" and item.status == "draft":
+        item.status = "validated"
+    session.commit(); session.refresh(item)
+    return as_dict(item)
 
 
 @app.get("/api/v1/projects/{project_id}/calibration-sets")

@@ -131,6 +131,7 @@ class EvaluationSetVersion(Base, Timestamped):
     version: Mapped[str] = mapped_column(String(100))
     purpose: Mapped[str] = mapped_column(String(80), default="core")
     definition: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(40), default="draft")
     content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
