@@ -131,13 +131,18 @@ def test_onboarding_session_persists_step_evidence():
         created = client.post(f"/api/v1/projects/{project_id}/onboarding", json={"recipe_id": "mmdetection-onboarding"})
         assert created.status_code == 201
         assert len(created.json()["steps"]) == 9
+        storage_step = next(step for step in created.json()["steps"] if step["step_id"] == "storage")
+        assert storage_step["readiness"]["ready"] is False
+        assert "storage mapping" in storage_step["readiness"]["reason"]
         blocked = client.patch(f"/api/v1/projects/{project_id}/onboarding/steps/storage", json={"status": "completed"})
         assert blocked.status_code == 409
         client.post(f"/api/v1/projects/{project_id}/storages", json={"name": "workspace", "root_path": "."})
         updated = client.patch(f"/api/v1/projects/{project_id}/onboarding/steps/storage", json={"status": "completed", "evidence": {"storage_id": "STORE-1"}})
         assert updated.status_code == 200
         loaded = client.get(f"/api/v1/projects/{project_id}/onboarding").json()
-        assert next(step for step in loaded["steps"] if step["step_id"] == "storage")["status"] == "completed"
+        storage_step = next(step for step in loaded["steps"] if step["step_id"] == "storage")
+        assert storage_step["status"] == "completed"
+        assert storage_step["readiness"]["ready"] is True
 
 
 def test_result_import_is_idempotent_and_detects_conflict():

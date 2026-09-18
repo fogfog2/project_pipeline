@@ -144,14 +144,24 @@ def _step_readiness(session: Session, project_id: str, step_id: str) -> tuple[bo
     return True, "ready"
 
 
+def _onboarding_step_views(session: Session, project_id: str, onboarding_id: str) -> list[dict]:
+    steps = session.scalars(select(StepProgress).where(StepProgress.session_id == onboarding_id).order_by(StepProgress.created_at)).all()
+    views = []
+    for item in steps:
+        ready, reason = _step_readiness(session, project_id, item.step_id)
+        view = as_dict(item)
+        view["readiness"] = {"ready": ready, "reason": reason}
+        views.append(view)
+    return views
+
+
 @app.get("/api/v1/projects/{project_id}/onboarding")
 def get_onboarding(project_id: str, session: Session = Depends(get_session)):
-    project = require_project(session, project_id)
+    require_project(session, project_id)
     onboarding = session.scalar(select(OnboardingSession).where(OnboardingSession.project_id == project_id))
     if not onboarding:
         return {"session": None, "steps": []}
-    steps = session.scalars(select(StepProgress).where(StepProgress.session_id == onboarding.id).order_by(StepProgress.created_at)).all()
-    return {"session": as_dict(onboarding), "steps": [as_dict(item) for item in steps]}
+    return {"session": as_dict(onboarding), "steps": _onboarding_step_views(session, project_id, onboarding.id)}
 
 
 @app.post("/api/v1/projects/{project_id}/onboarding", status_code=201)
@@ -159,13 +169,13 @@ def create_onboarding(project_id: str, payload: OnboardingCreate, session: Sessi
     project = require_project(session, project_id)
     existing = session.scalar(select(OnboardingSession).where(OnboardingSession.project_id == project_id))
     if existing:
-        return {"session": as_dict(existing), "steps": [as_dict(item) for item in session.scalars(select(StepProgress).where(StepProgress.session_id == existing.id).order_by(StepProgress.created_at)).all()]}
+        return {"session": as_dict(existing), "steps": _onboarding_step_views(session, project_id, existing.id)}
     recipe_id = payload.recipe_id if payload.recipe_id in _RECIPE_STEPS else "blank"
     onboarding = OnboardingSession(project_id=project.id, recipe_id=recipe_id, recipe_version=payload.recipe_version)
     session.add(onboarding); session.flush()
     steps = [StepProgress(session_id=onboarding.id, step_id=step) for step in _RECIPE_STEPS[recipe_id]]
     session.add_all(steps); session.commit(); session.refresh(onboarding)
-    return {"session": as_dict(onboarding), "steps": [as_dict(item) for item in steps]}
+    return {"session": as_dict(onboarding), "steps": _onboarding_step_views(session, project_id, onboarding.id)}
 
 
 @app.patch("/api/v1/projects/{project_id}/onboarding/steps/{step_id}")
@@ -187,7 +197,10 @@ def update_onboarding_step(project_id: str, step_id: str, payload: StepProgressU
     steps = session.scalars(select(StepProgress).where(StepProgress.session_id == onboarding.id)).all()
     onboarding.status = "completed" if steps and all(item.status in {"completed", "skipped"} for item in steps) else "active"
     session.commit(); session.refresh(step)
-    return as_dict(step)
+    view = as_dict(step)
+    ready, reason = _step_readiness(session, project_id, step.step_id)
+    view["readiness"] = {"ready": ready, "reason": reason}
+    return view
 
 
 @app.get("/api/v1/environment")
