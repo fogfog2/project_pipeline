@@ -87,6 +87,8 @@ class ModelVersion(Base, Timestamped):
     precision: Mapped[str] = mapped_column(String(50), default="fp32")
     artifact_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     config_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    config_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
     source_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     alias: Mapped[str | None] = mapped_column(String(50), nullable=True)

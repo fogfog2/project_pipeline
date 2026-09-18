@@ -38,7 +38,10 @@ def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path):
         assert finalized.status_code == 200
         assert finalized.json()["status"] == "finalized"
         assert client.post(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/finalize").status_code == 409
-        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "detector", "version": "v1", "family": "fixture", "source_dataset_id": dataset["id"]}).json()
+        artifact = tmp_path / "model.onnx"; artifact.write_bytes(b"onnx-fixture")
+        config = tmp_path / "model.json"; config.write_text("{}", encoding="utf-8")
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "detector", "version": "v1", "family": "fixture", "source_dataset_id": dataset["id"], "artifact_path": str(artifact), "config_path": str(config)}).json()
+        assert model["artifact_sha256"] and model["config_sha256"]
         annotation.write_text(annotation.read_text(encoding="utf-8") + "\n", encoding="utf-8")
         response = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions", json={
             "model_id": model["id"], "dataset_id": dataset["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",

@@ -47,3 +47,8 @@ def init_database() -> None:
         model_columns = {column["name"] for column in inspect(engine).get_columns("model_versions")}
         if "status" not in model_columns:
             connection.exec_driver_sql("ALTER TABLE model_versions ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'experimental'")
+        model_columns = {column["name"] for column in inspect(engine).get_columns("model_versions")}
+        if "artifact_sha256" not in model_columns:
+            connection.exec_driver_sql("ALTER TABLE model_versions ADD COLUMN artifact_sha256 VARCHAR(64)")
+        if "config_sha256" not in model_columns:
+            connection.exec_driver_sql("ALTER TABLE model_versions ADD COLUMN config_sha256 VARCHAR(64)")

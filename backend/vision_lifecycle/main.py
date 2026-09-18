@@ -24,7 +24,7 @@ from .runner import cancel, launch
 from .schemas import ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, TargetProfileCreate
 from .serializers import as_dict
 from .service import agent_request, compare_models, overview, safe_export, seed_demo
-from .fingerprints import dataset_fingerprint
+from .fingerprints import dataset_fingerprint, file_sha256
 from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
 
 
@@ -316,7 +316,10 @@ def create_model(project_id: str, payload: ModelCreate, session: Session = Depen
         source_run = session.get(Run, payload.source_run_id)
         if not source_run or source_run.project_id != project_id:
             raise HTTPException(422, "Source run must belong to this project")
-    model = ModelVersion(project_id=project_id, **payload.model_dump())
+    values = payload.model_dump()
+    values["artifact_sha256"] = file_sha256(values["artifact_path"]) if values.get("artifact_path") and Path(values["artifact_path"]).is_file() else None
+    values["config_sha256"] = file_sha256(values["config_path"]) if values.get("config_path") and Path(values["config_path"]).is_file() else None
+    model = ModelVersion(project_id=project_id, **values)
     session.add(model); session.commit(); session.refresh(model)
     return as_dict(model)
 
@@ -329,6 +332,10 @@ def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: 
         raise HTTPException(404, "Model not found")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(model, key, value)
+    if "artifact_path" in payload.model_dump(exclude_unset=True):
+        model.artifact_sha256 = file_sha256(model.artifact_path) if model.artifact_path and Path(model.artifact_path).is_file() else None
+    if "config_path" in payload.model_dump(exclude_unset=True):
+        model.config_sha256 = file_sha256(model.config_path) if model.config_path and Path(model.config_path).is_file() else None
     session.commit(); session.refresh(model)
     return as_dict(model)
 

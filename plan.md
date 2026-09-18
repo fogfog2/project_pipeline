@@ -17,7 +17,7 @@
 
 U0 신뢰성 보수 → U1 빈 프로젝트·범용 CRUD UI → U2 디렉터리·데이터 버전 → U3 worker·로그·recipe engine → U4 모델 연결·실제 평가·변경 비교 → U5 RTMDet/YOLOX recipe → U6 양자화·보드·Release → U7 도입 문서·운영 검증.
 
-현재 구현 진행: U0의 테스트 DB 격리, gate 방향·규칙 검증, 교차 프로젝트 참조 차단, 빈/recipe 프로젝트 생성, Dataset 초안 저장, 명시적 모델 데이터 선택, project/dataset/model 보관·복원 API와 기본 UI를 반영했다. U2의 첫 조각으로 읽기 전용 storage mapping 등록·재검사·root 내부 탐색, DataAsset 파일 inventory·SHA-256, dataset annotation/manifest fingerprint, 원본 변경 시 prediction 평가 차단, Pages export의 경로·fingerprint 경로 제거를 반영했다. 평가 화면에서 모델·Dataset·외부 COCO prediction JSON을 선택해 실제 AP50/COCO 평가를 실행하고, Release 화면에서 평가 run 기반 gate 판정을 기록하는 UI도 연결했다. Label/split/evaluation/calibration 버전, 이미지/annotation preview와 대형 검사 Job은 다음 작업이다.
+현재 구현 진행: U0의 테스트 DB 격리, gate 방향·규칙 검증, 교차 프로젝트 참조 차단, 빈/recipe 프로젝트 생성, Dataset 초안 저장, 명시적 모델 데이터 선택, project/dataset/model 보관·복원 API와 기본 UI를 반영했다. U2의 첫 조각으로 읽기 전용 storage mapping 등록·재검사·root 내부 탐색, DataAsset 파일 inventory·SHA-256, dataset annotation/manifest fingerprint, 원본 변경 시 prediction 평가 차단, Pages export의 경로·fingerprint 경로 제거를 반영했다. 모델 checkpoint/config SHA-256 provenance, 평가 화면의 외부 COCO prediction 평가, Release 화면의 평가 run 기반 gate 판정도 연결했다. Label/split/evaluation/calibration 버전, 이미지/annotation preview와 대형 검사 Job은 다음 작업이다.
 
 아래 A–G는 기술 작업 분류로 유지하며 실제 구현은 최신 통합 계획의 U0–U7에서 사용자 흐름별로 묶어 수행한다.
 
