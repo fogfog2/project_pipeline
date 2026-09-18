@@ -137,5 +137,6 @@
     }
   ],
   "release_evidence": [],
-  "audit_events": []
+  "audit_events": [],
+  "field_batches": []
 }

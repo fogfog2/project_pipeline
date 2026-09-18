@@ -435,6 +435,27 @@ def test_versioned_contract_schemas_are_available_from_api():
         assert "properties" in body["schemas"]["dataset"]
 
 
+def test_field_failure_batch_preserves_source_lineage_and_artifacts():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "field-feedback"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "eval", "version": "v1"}).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "fixture", "source_dataset_id": dataset["id"]}).json()
+        batch = client.post(f"/api/v1/projects/{project_id}/field-batches", json={
+            "name": "night failures", "source_model_id": model["id"], "source_dataset_id": dataset["id"],
+            "source_path": "examples/mmdetection/dataset.json", "sample_count": 4, "failure_count": 2,
+            "metadata_json": {"label_status": "pending"},
+        })
+        assert batch.status_code == 201
+        assert batch.json()["source_model_id"] == model["id"]
+        assert batch.json()["metadata_json"]["artifact_ids"]["source_path"]
+        listed = client.get(f"/api/v1/projects/{project_id}/field-batches")
+        assert listed.status_code == 200 and listed.json()[0]["failure_count"] == 2
+        graph = client.get(f"/api/v1/projects/{project_id}/lineage").json()
+        assert any(node["id"] == batch.json()["id"] and node["kind"] == "field-batch" for node in graph["nodes"])
+
+
 def test_split_validation_rejects_duplicate_items_and_group_leakage():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

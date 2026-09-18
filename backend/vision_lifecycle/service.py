@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, Project, QuantizationRun, Release, ReleaseEvidence, Run, SplitVersion, StorageMapping, TargetProfile
+from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, FieldDataBatch, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, Project, QuantizationRun, Release, ReleaseEvidence, Run, SplitVersion, StorageMapping, TargetProfile
 from .dataset_snapshot import build_dataset_snapshot
 
 
@@ -157,6 +157,7 @@ def lineage(session: Session, project_id: str) -> dict:
     quants = session.scalars(select(QuantizationRun).where(QuantizationRun.project_id == project_id)).all()
     boards = session.scalars(select(BoardBenchmark).where(BoardBenchmark.project_id == project_id)).all()
     artifacts = session.scalars(select(Artifact).where(Artifact.project_id == project_id)).all()
+    field_batches = session.scalars(select(FieldDataBatch).where(FieldDataBatch.project_id == project_id)).all()
     releases = session.scalars(select(Release).where(Release.project_id == project_id)).all()
     release_ids = [item.id for item in releases]
     evidences = session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id)).all()
@@ -171,6 +172,7 @@ def lineage(session: Session, project_id: str) -> dict:
     nodes += [{"id": item.id, "kind": "release", "label": item.name, "status": item.decision} for item in releases]
     nodes += [{"id": item.id, "kind": "release-evidence", "label": f"{item.evidence_type}: {item.source_id}", "status": item.status} for item in evidences]
     nodes += [{"id": item.id, "kind": "artifact", "label": item.logical_name, "status": item.status} for item in artifacts]
+    nodes += [{"id": item.id, "kind": "field-batch", "label": item.name, "status": item.status} for item in field_batches]
     edges = []
     for dataset in datasets:
         edges.append({"source": project.id, "target": dataset.id, "relation": "contains"})
@@ -211,6 +213,13 @@ def lineage(session: Session, project_id: str) -> dict:
             edges.append({"source": owner_id, "target": artifact.id, "relation": "has_artifact"})
         else:
             edges.append({"source": project.id, "target": artifact.id, "relation": "contains"})
+    for batch in field_batches:
+        if batch.source_model_id:
+            edges.append({"source": batch.source_model_id, "target": batch.id, "relation": "field_from_model"})
+        if batch.source_dataset_id:
+            edges.append({"source": batch.source_dataset_id, "target": batch.id, "relation": "field_from_dataset"})
+        if batch.candidate_dataset_id:
+            edges.append({"source": batch.id, "target": batch.candidate_dataset_id, "relation": "candidate_dataset"})
     return {"project_id": project_id, "nodes": nodes, "edges": edges}
 
 
@@ -277,6 +286,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "runs": [safe(x) for x in session.scalars(select(Run).where(Run.project_id == project_id)).all()],
         "storages": [safe(x) for x in session.scalars(select(StorageMapping).where(StorageMapping.project_id == project_id)).all()],
         "assets": [safe(x) for x in session.scalars(select(DataAsset).where(DataAsset.project_id == project_id)).all()],
+        "field_batches": [safe(x) for x in session.scalars(select(FieldDataBatch).where(FieldDataBatch.project_id == project_id)).all()],
         "artifacts": [safe(x) for x in session.scalars(select(Artifact).where(Artifact.project_id == project_id)).all()],
         "label_schemas": [safe(x) for x in session.scalars(select(LabelSchemaVersion).where(LabelSchemaVersion.project_id == project_id)).all()],
         "splits": [safe(x) for x in session.scalars(select(SplitVersion).where(SplitVersion.project_id == project_id)).all()],

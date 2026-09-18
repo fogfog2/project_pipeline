@@ -47,6 +47,21 @@ class DatasetUpdate(BaseModel):
     validation: dict[str, Any] | None = None
 
 
+class FieldDataBatchCreate(BaseModel):
+    name: str
+    source_model_id: str | None = None
+    source_dataset_id: str | None = None
+    candidate_dataset_id: str | None = None
+    source_path: str | None = None
+    prediction_path: str | None = None
+    label_path: str | None = None
+    sample_count: int = Field(default=0, ge=0)
+    failure_count: int = Field(default=0, ge=0)
+    status: str = "registered"
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    notes: str = ""
+
+
 class StorageMappingCreate(BaseModel):
     name: str
     root_path: str

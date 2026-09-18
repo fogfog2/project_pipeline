@@ -22,10 +22,10 @@ from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .importer import manifest_hash, validate_result_manifest
-from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
+from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, FieldDataBatch, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from . import schemas as contract_schemas
 from .serializers import as_dict
 from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
@@ -522,6 +522,35 @@ def browse_storage_mapping(project_id: str, storage_id: str, payload: StorageBro
 def list_assets(project_id: str, session: Session = Depends(get_session)):
     require_project(session, project_id)
     return [as_dict(item) for item in session.scalars(select(DataAsset).where(DataAsset.project_id == project_id).order_by(DataAsset.relative_path)).all()]
+
+
+@app.get("/api/v1/projects/{project_id}/field-batches")
+def list_field_batches(project_id: str, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    return [as_dict(item) for item in session.scalars(select(FieldDataBatch).where(FieldDataBatch.project_id == project_id).order_by(FieldDataBatch.created_at.desc())).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/field-batches", status_code=201)
+def create_field_batch(project_id: str, payload: FieldDataBatchCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    for entity, label in ((ModelVersion, "Source model"), (DatasetVersion, "Source dataset"), (DatasetVersion, "Candidate dataset")):
+        identifier = {"Source model": payload.source_model_id, "Source dataset": payload.source_dataset_id, "Candidate dataset": payload.candidate_dataset_id}[label]
+        _project_entity(session, entity, identifier, project_id, label)
+    metadata = dict(payload.metadata_json)
+    item = FieldDataBatch(project_id=project_id, **payload.model_dump(exclude={"metadata_json"}), metadata_json=metadata)
+    session.add(item); session.flush()
+    artifact_ids: dict[str, str] = {}
+    for key, kind in (("source_path", "field-source"), ("prediction_path", "field-prediction"), ("label_path", "field-label")):
+        path = getattr(item, key)
+        if path:
+            artifact = register_artifact(session, project_id, kind=kind, logical_name=f"field/{item.name}/{key}", owner_type="field-batch", owner_id=item.id, source_path=path)
+            session.flush()
+            artifact_ids[key] = artifact.id
+    if artifact_ids:
+        item.metadata_json = {**metadata, "artifact_ids": artifact_ids}
+    record_audit(session, project_id, "field-batch", item.id, "registered", after={"name": item.name, "source_model_id": item.source_model_id, "source_dataset_id": item.source_dataset_id, "candidate_dataset_id": item.candidate_dataset_id, "sample_count": item.sample_count, "failure_count": item.failure_count})
+    session.commit(); session.refresh(item)
+    return as_dict(item)
 
 
 @app.post("/api/v1/projects/{project_id}/storages/{storage_id}/inventory")

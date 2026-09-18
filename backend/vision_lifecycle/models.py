@@ -77,6 +77,25 @@ class DataAsset(Base, Timestamped):
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class FieldDataBatch(Base, Timestamped):
+    """Field/failure samples collected for a later dataset candidate."""
+    __tablename__ = "field_data_batches"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("FIELD"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    source_model_id: Mapped[str | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
+    source_dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
+    candidate_dataset_id: Mapped[str | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
+    source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prediction_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    label_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sample_count: Mapped[int] = mapped_column(default=0)
+    failure_count: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(40), default="registered")
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
 class LabelSchemaVersion(Base, Timestamped):
     __tablename__ = "label_schema_versions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("LABEL"))
