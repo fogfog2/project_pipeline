@@ -55,6 +55,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - Calibration set의 sample/중복/seed/전처리 선언 검증 및 validation statistics
 - COCO annotation image/category/bbox 샘플 preview
 - baseline/candidate의 호환성 검사와 metric delta 비교
+- 평가·비교 화면의 metric delta/호환성 사유/Run 계약 상세와 JSON report 다운로드
 - 비교 시 완료된 평가 중 동일 dataset·평가 설정·class mapping 계약을 만족하는 최신 재현 가능 pair를 선택하고, 실패/불일치 실행은 공식 delta에서 제외
 - FastAPI `/api/v1`와 `visionops` CLI
 - `schemas/v1` JSON Schema, API `GET /api/v1/schemas`, CLI `visionops schemas`로 API/CLI/agent 계약 공유
