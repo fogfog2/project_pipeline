@@ -35,6 +35,26 @@ def test_storage_mapping_archive_is_reversible_and_blocks_operations(tmp_path: P
         assert restored.status_code == 200 and restored.json()["status"] == "available"
 
 
+def test_storage_remap_revalidates_inventory_assets(tmp_path: Path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "image.jpg").write_bytes(b"original")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "storage-remap"}).json()["id"]
+        mapping = client.post(f"/api/v1/projects/{project_id}/storages", json={"name": "workspace", "root_path": str(source)}).json()
+        created = client.post(f"/api/v1/projects/{project_id}/storages/{mapping['id']}/inventory", json={}).json()
+        assert created["count"] == 1
+        remapped = tmp_path / "remapped"
+        remapped.mkdir()
+        (remapped / "image.jpg").write_bytes(b"changed")
+        response = client.patch(f"/api/v1/projects/{project_id}/storages/{mapping['id']}", json={"root_path": str(remapped)})
+        assert response.status_code == 200
+        assert response.json()["last_validation"]["assets"] == {"checked": 1, "verified": 0, "missing": 0, "changed": 1}
+        assert client.get(f"/api/v1/projects/{project_id}/assets").json()[0]["status"] == "changed"
+
+
 def test_dataset_hash_blocks_evaluation_after_source_changes(tmp_path: Path, monkeypatch):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

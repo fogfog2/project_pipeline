@@ -42,7 +42,7 @@ from .split_validation import validate_split_definition
 from .calibration_validation import inspect_calibration_statistics, validate_calibration_definition
 from .evaluation_validation import validate_evaluation_definition
 from .board_validation import validate_board_measurement
-from .storage import browse as browse_storage, inventory as inventory_storage, storage_status
+from .storage import browse as browse_storage, inventory as inventory_storage, resolve_within, storage_status
 from .audit import record_audit
 
 
@@ -531,6 +531,33 @@ def create_storage(project_id: str, payload: StorageMappingCreate, session: Sess
     return as_dict(mapping)
 
 
+def _refresh_storage_assets(session: Session, mapping: StorageMapping) -> dict[str, int]:
+    """Recheck inventory assets after a storage root validation/remap."""
+    assets = session.scalars(select(DataAsset).where(DataAsset.project_id == mapping.project_id, DataAsset.storage_id == mapping.id)).all()
+    counts = {"checked": 0, "verified": 0, "missing": 0, "changed": 0}
+    for asset in assets:
+        counts["checked"] += 1
+        try:
+            path = resolve_within(mapping.root_path, asset.relative_path)
+            if not path.is_file():
+                asset.status = "missing"
+                counts["missing"] += 1
+                continue
+            current_hash = file_sha256(path)
+            asset.size_bytes = path.stat().st_size
+            if asset.sha256 and asset.sha256 != current_hash:
+                asset.status = "changed"
+                counts["changed"] += 1
+            else:
+                asset.sha256 = current_hash
+                asset.status = "verified"
+                counts["verified"] += 1
+        except (OSError, ValueError):
+            asset.status = "missing"
+            counts["missing"] += 1
+    return counts
+
+
 @app.patch("/api/v1/projects/{project_id}/storages/{storage_id}")
 def update_storage(project_id: str, storage_id: str, payload: StorageMappingUpdate, session: Session = Depends(get_session)):
     require_project(session, project_id)
@@ -545,6 +572,8 @@ def update_storage(project_id: str, storage_id: str, payload: StorageMappingUpda
         validation = storage_status(mapping.root_path)
         mapping.status = validation["status"]
         mapping.last_validation = validation
+        if validation["status"] == "available":
+            mapping.last_validation = {**validation, "assets": _refresh_storage_assets(session, mapping)}
     record_audit(session, project_id, "storage", mapping.id, "updated", before=before, after={key: getattr(mapping, key) for key in values})
     session.commit(); session.refresh(mapping)
     return as_dict(mapping)
@@ -558,7 +587,7 @@ def validate_storage(project_id: str, storage_id: str, session: Session = Depend
         raise HTTPException(404, "Storage mapping not found")
     validation = storage_status(mapping.root_path)
     mapping.status = validation["status"]
-    mapping.last_validation = validation
+    mapping.last_validation = {**validation, "assets": _refresh_storage_assets(session, mapping)} if validation["status"] == "available" else validation
     session.commit(); session.refresh(mapping)
     return as_dict(mapping)
 
