@@ -6,6 +6,7 @@ import hashlib
 import csv
 import html
 import io
+import importlib.util
 import json
 import os
 from datetime import datetime
@@ -30,7 +31,7 @@ from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mm
 from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, FieldDataBatch, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, MmdetectionPreflightRequest, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from . import schemas as contract_schemas
 from .serializers import as_dict
 from .service import ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, import_result_manifest, lineage, overview, safe_export, seed_demo
@@ -457,6 +458,24 @@ def inspect_dataset_path(project_id: str, payload: PathInspectRequest, session: 
         return inspect_path(payload.path)
     except (OSError, ValueError) as error:
         raise HTTPException(422, str(error)) from error
+
+
+@app.post("/api/v1/projects/{project_id}/mmdetection/preflight")
+def mmdetection_preflight(project_id: str, payload: MmdetectionPreflightRequest, session: Session = Depends(get_session)):
+    """Check official RTMDet/YOLOX bundle paths before model registration."""
+    require_project(session, project_id)
+    expected = {"rtmdet-tiny": ("RTMDet-tiny", "rtmdet_tiny_8xb32-300e_coco"), "yolox-s": ("YOLOX-s", "yolox_s_8xb8-300e_coco")}
+    if payload.model not in expected:
+        raise HTTPException(422, "model must be rtmdet-tiny or yolox-s")
+    def info(value: str):
+        path = Path(value).expanduser()
+        return {"path": str(path), "exists": path.is_file(), **({"size_bytes": path.stat().st_size, "sha256": file_sha256(str(path))} if path.is_file() else {})}
+    artifacts = {"config": info(payload.config_path), "checkpoint": info(payload.checkpoint_path)}
+    dependencies = {name: importlib.util.find_spec(name) is not None for name in ("mmdet", "mmengine", "mmcv")}
+    missing = [name for name, item in artifacts.items() if not item["exists"]]
+    missing_dependencies = [name for name, present in dependencies.items() if not present]
+    status = "ready" if not missing and not missing_dependencies else "missing_artifacts" if missing else "missing_dependencies"
+    return {"schema_version": "1.0", "status": status, "model": payload.model, "family": expected[payload.model][0], "mim_config": expected[payload.model][1], "framework": "MMDetection", "framework_version": "3.3.0", "artifacts": artifacts, "dependencies": dependencies, "missing": missing, "missing_dependencies": missing_dependencies}
 
 
 @app.get("/api/v1/projects/{project_id}/storages")

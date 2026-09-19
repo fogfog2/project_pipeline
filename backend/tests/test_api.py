@@ -410,6 +410,21 @@ def test_plugin_endpoint_exposes_versioned_adapter_registry():
         assert "batch-evaluation" in onnx["capabilities"]
 
 
+def test_mmdetection_preflight_api_reports_paths_and_dependencies(tmp_path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    config = tmp_path / "rtmdet.py"; checkpoint = tmp_path / "rtmdet.pth"
+    config.write_text("model = {}", encoding="utf-8"); checkpoint.write_bytes(b"checkpoint")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "preflight-api"}).json()["id"]
+        response = client.post(f"/api/v1/projects/{project_id}/mmdetection/preflight", json={"model": "rtmdet-tiny", "config_path": str(config), "checkpoint_path": str(checkpoint)})
+        assert response.status_code == 200
+        report = response.json()
+        assert report["status"] in {"ready", "missing_dependencies"}
+        assert report["artifacts"]["checkpoint"]["sha256"]
+        assert report["family"] == "RTMDet-tiny"
+
+
 def test_classification_evaluation_blocks_changed_dataset_source(tmp_path):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

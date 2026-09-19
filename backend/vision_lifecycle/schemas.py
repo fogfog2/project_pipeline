@@ -298,6 +298,12 @@ class PathInspectRequest(BaseModel):
     path: str
 
 
+class MmdetectionPreflightRequest(BaseModel):
+    model: str
+    config_path: str
+    checkpoint_path: str
+
+
 class ReleaseCreate(BaseModel):
     name: str
     model_id: str
