@@ -285,6 +285,34 @@ def compare_models(
     }
 
 
+def evaluation_set_report(session: Session, project_id: str) -> list[dict]:
+    """Group completed evaluations by their explicit EvaluationSet contract."""
+    if not session.get(Project, project_id):
+        raise LookupError("Project not found")
+    sets = {item.id: item for item in session.scalars(select(EvaluationSetVersion).where(EvaluationSetVersion.project_id == project_id)).all()}
+    models = {item.id: item for item in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()}
+    groups: dict[str, dict] = {}
+    for run in session.scalars(select(Run).where(Run.project_id == project_id, Run.kind == "evaluation", Run.status == "completed").order_by(Run.created_at)).all():
+        config = run.config or {}
+        set_id = config.get("evaluation_set_id") or "__dataset__"
+        evaluation_set = sets.get(set_id)
+        group = groups.setdefault(set_id, {
+            "evaluation_set_id": None if set_id == "__dataset__" else set_id,
+            "name": evaluation_set.name if evaluation_set else "Dataset 전체",
+            "version": evaluation_set.version if evaluation_set else None,
+            "dataset_id": run.dataset_id,
+            "runs": [],
+        })
+        model = models.get(run.model_id)
+        group["runs"].append({
+            "run_id": run.id, "run_name": run.name, "model_id": run.model_id,
+            "model_name": model.name if model else "unknown", "model_version": model.version if model else None,
+            "metrics": run.metrics or {}, "evaluator_version": config.get("evaluator_version"),
+            "protocol": config.get("protocol"), "scope": config.get("scope"),
+        })
+    return sorted(groups.values(), key=lambda item: (item["name"], item["version"] or ""))
+
+
 def agent_request(session: Session, project_id: str) -> dict:
     project = session.get(Project, project_id)
     if not project:
@@ -479,6 +507,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "models": [safe(x) for x in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()],
         "model_alias_history": [safe(x) for x in session.scalars(select(ModelAliasHistory).where(ModelAliasHistory.project_id == project_id).order_by(ModelAliasHistory.created_at.desc())).all()],
         "runs": [safe(x) for x in session.scalars(select(Run).where(Run.project_id == project_id)).all()],
+        "evaluation_set_report": evaluation_set_report(session, project_id),
         "storages": [safe(x) for x in session.scalars(select(StorageMapping).where(StorageMapping.project_id == project_id)).all()],
         "assets": [safe(x) for x in session.scalars(select(DataAsset).where(DataAsset.project_id == project_id)).all()],
         "field_batches": [safe(x) for x in session.scalars(select(FieldDataBatch).where(FieldDataBatch.project_id == project_id)).all()],

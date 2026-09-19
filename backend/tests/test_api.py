@@ -934,6 +934,23 @@ def test_storage_remap_can_rewrite_registered_absolute_references(tmp_path):
         assert listed[0]["annotation_path"] == str(new_file)
 
 
+def test_evaluation_set_report_groups_completed_runs_by_contract():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "evaluation-report"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "eval", "version": "v1"}).json()
+        evaluation_set = client.post(f"/api/v1/projects/{project_id}/evaluation-sets", json={"name": "core", "version": "v1", "dataset_id": dataset["id"], "definition": {"items": []}}).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "fixture"}).json()
+        run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "core eval", "status": "completed", "dataset_id": dataset["id"], "model_id": model["id"], "config": {"evaluation_set_id": evaluation_set["id"], "evaluator_version": "v1", "protocol": "coco"}, "metrics": {"bbox_AP50": 0.8}}).json()
+        report = client.get(f"/api/v1/projects/{project_id}/reports/evaluation-sets")
+        assert report.status_code == 200
+        assert report.json()[0]["evaluation_set_id"] == evaluation_set["id"]
+        assert report.json()[0]["runs"][0]["run_id"] == run["id"]
+        exported = client.get(f"/api/v1/projects/{project_id}/export").json()
+        assert exported["evaluation_set_report"][0]["runs"][0]["metrics"]["bbox_AP50"] == 0.8
+
+
 def test_evaluation_set_is_persisted_and_must_match_dataset():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

@@ -37,7 +37,7 @@ from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, MmdetectionPreflightRequest, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseApprovalCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from . import schemas as contract_schemas
 from .serializers import as_dict
-from .service import DatasetDeletionConflict, ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, delete_draft_dataset, import_result_manifest, lineage, overview, rewrite_storage_references, safe_export, seed_demo
+from .service import DatasetDeletionConflict, ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, delete_draft_dataset, evaluation_set_report, import_result_manifest, lineage, overview, rewrite_storage_references, safe_export, seed_demo
 from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
@@ -1971,6 +1971,14 @@ def export_runs_csv(project_id: str, session: Session = Depends(get_session)):
     for run in snapshot["runs"]:
         writer.writerow({"run_id": run.get("id", ""), "kind": run.get("kind", ""), "name": run.get("name", ""), "status": run.get("status", ""), "model_id": run.get("model_id", ""), "dataset_id": run.get("dataset_id", ""), "metrics": json.dumps(run.get("metrics", {}), ensure_ascii=False, sort_keys=True), "config": json.dumps(run.get("config", {}), ensure_ascii=False, sort_keys=True)})
     return Response(content=output.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="vision-lifecycle-{project_id}-runs.csv"'})
+
+
+@app.get("/api/v1/projects/{project_id}/reports/evaluation-sets")
+def report_evaluation_sets(project_id: str, session: Session = Depends(get_session)):
+    try:
+        return evaluation_set_report(session, project_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
 
 
 @app.get("/api/v1/projects/{project_id}/reports/summary.html")
