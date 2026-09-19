@@ -18,9 +18,9 @@ steps:
     action: dataset.create_and_validate
     expected_evidence: [dataset_draft, source_fingerprint]
   - id: contracts
-    purpose: label, split, evaluation, calibration 규격을 선택적으로 버전화한다.
+    purpose: label, split, evaluation 규격을 만들고 필요하면 calibration 규격도 버전화한다.
     action: versioned_contract.create
-    expected_evidence: [label_or_split_or_evaluation_or_calibration]
+    expected_evidence: [label_schema, split, evaluation_set]
   - id: model
     purpose: 외부 모델·config·training run을 명시적으로 연결한다.
     action: model.create
