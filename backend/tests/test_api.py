@@ -89,6 +89,21 @@ def test_job_logs_support_cursor_windows():
         assert "Mock board" in first.text + second.text
 
 
+def test_job_log_websocket_sends_reconnectable_snapshot(monkeypatch):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    monkeypatch.setenv("VISION_LIFECYCLE_EXTERNAL_WORKER", "true")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "job-log-stream"}).json()["id"]
+        created = client.post(f"/api/v1/projects/{project_id}/jobs", json={"runner_id": "mock-board"}).json()
+        with client.websocket_connect(f"/api/v1/projects/{project_id}/jobs/{created['id']}/stream") as websocket:
+            event = websocket.receive_json()
+            assert event["type"] == "snapshot"
+            assert event["job_id"] == created["id"]
+            assert event["status"] == "queued"
+            assert event["next_cursor"] == 0
+
+
 def test_restart_marks_active_jobs_interrupted():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

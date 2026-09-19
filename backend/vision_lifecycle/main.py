@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 import hashlib
 import json
@@ -7,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy import select
@@ -1535,6 +1536,43 @@ def job_logs(project_id: str, job_id: str, cursor: int = 0, limit: int = 200, se
             end = start + boundary + 1
             window = source[start:end]
     return {"job_id": job.id, "status": job.status, "cursor": start, "next_cursor": end, "complete": end >= len(source), "text": window, "result": job.result_json or {}}
+
+
+@app.websocket("/api/v1/projects/{project_id}/jobs/{job_id}/stream")
+async def job_log_stream(websocket: WebSocket, project_id: str, job_id: str):
+    """Stream append-only job log deltas while retaining the cursor contract."""
+    await websocket.accept()
+    cursor = 0
+    previous_status: str | None = None
+    try:
+        while True:
+            with SessionLocal() as session:
+                job = session.get(Job, job_id)
+                if not job or job.project_id != project_id:
+                    await websocket.close(code=4404)
+                    return
+                source = job.log or ""
+                status = job.status
+                chunk = source[cursor:]
+                changed = cursor == 0 or bool(chunk) or status != previous_status
+                if changed:
+                    await websocket.send_json({
+                        "type": "snapshot" if cursor == 0 else "update",
+                        "job_id": job.id,
+                        "status": status,
+                        "cursor": cursor,
+                        "next_cursor": len(source),
+                        "complete": status in {"completed", "failed", "cancelled", "timed_out", "interrupted"},
+                        "text": source if cursor == 0 else chunk,
+                        "result": job.result_json or {},
+                    })
+                    cursor = len(source)
+                    previous_status = status
+                    if status in {"completed", "failed", "cancelled", "timed_out", "interrupted"}:
+                        return
+            await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        return
 
 
 @app.get("/api/v1/projects/{project_id}/runners")
