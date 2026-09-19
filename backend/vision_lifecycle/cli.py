@@ -334,14 +334,21 @@ def main() -> None:
             errors = validate_label_schema(payload.get("classes", []), payload.get("mapping", {}))
             if errors:
                 raise ValueError(f"Invalid label schema: {errors}")
+            dataset_id = payload.get("dataset_id")
+            dataset = session.get(DatasetVersion, dataset_id) if dataset_id else None
+            if dataset_id and (not dataset or dataset.project_id != args.project_id):
+                raise ValueError("Dataset reference must belong to this project")
             parent_id = payload.get("parent_label_schema_id")
             if parent_id:
                 parent = session.get(LabelSchemaVersion, parent_id)
                 if not parent or parent.project_id != args.project_id:
                     raise ValueError("Parent label schema must belong to this project")
-            value = {"name": payload["name"], "version": payload["version"], "classes": payload.get("classes", []), "mapping": payload.get("mapping", {}), "dataset_id": payload.get("dataset_id"), "parent_label_schema_id": parent_id}
-            from .main import _version_hash
-            item = LabelSchemaVersion(project_id=args.project_id, parent_label_schema_id=parent_id, dataset_id=payload.get("dataset_id"), name=payload["name"], version=payload["version"], classes=value["classes"], mapping=value["mapping"], status=payload.get("status", "draft"), content_hash=_version_hash(value))
+                if parent.dataset_id and dataset_id and parent.dataset_id != dataset_id:
+                    raise ValueError("Parent label schema must use the selected DatasetVersion")
+            value = {"name": payload["name"], "version": payload["version"], "classes": payload.get("classes", []), "mapping": payload.get("mapping", {}), "dataset_id": dataset_id, "parent_label_schema_id": parent_id}
+            import hashlib
+            content_hash = hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+            item = LabelSchemaVersion(project_id=args.project_id, parent_label_schema_id=parent_id, dataset_id=dataset_id, name=payload["name"], version=payload["version"], classes=value["classes"], mapping=value["mapping"], status=payload.get("status", "draft"), content_hash=content_hash)
             session.add(item); session.commit(); session.refresh(item); _json(as_dict(item))
         elif args.command == "label-diff":
             left = session.get(LabelSchemaVersion, args.from_id)
