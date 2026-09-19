@@ -50,6 +50,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - COCO prediction 평가는 동기 API(`/evaluations/predictions`)와 동일한 입력 계약의 worker Job API(`/evaluations/predictions/jobs`)로 실행 가능
 - ONNX batch 평가는 동기 API(`/evaluations/onnx-batch`)와 worker Job API(`/evaluations/onnx-batch/jobs`)를 제공하며 결과 Run과 입력 records artifact를 동일하게 보존
 - Classification prediction records도 동기 API(`/evaluations/classification`)와 worker Job API(`/evaluations/classification/jobs`)에서 동일한 class mapping·EvaluationSet·Run 결과 규격으로 처리
+- Release gate는 evidence 종류뿐 아니라 `required_evidence_refs`로 특정 evaluation·board·quantization·artifact ID를 필수 근거로 고정하고 누락 시 `INCOMPLETE`로 기록
 - 작업 로그는 cursor API와 WebSocket snapshot/delta 스트림을 함께 제공해 실행 중인 작업을 새로고침 없이 확인
 - Dataset·Model·Storage 보관 전 dependency impact를 조회해 연결된 Run·양자화·보드·Release와 inventory asset/job을 확인하며, 보관은 언제든 복원할 수 있음
 - 현장 실패 사례 FieldDataBatch를 원본 모델·Dataset·예측/수정 label artifact·candidate DatasetVersion과 연결

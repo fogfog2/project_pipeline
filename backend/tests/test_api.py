@@ -711,6 +711,14 @@ def test_release_captures_immutable_evidence_snapshots_and_required_types():
         })
         assert incomplete.status_code == 201 and incomplete.json()["decision"] == "INCOMPLETE"
         assert "board" in incomplete.json()["gate_result"]["evidence"]["missing_required"]
+        missing_ref = client.post(f"/api/v1/projects/{project_id}/releases", json={
+            "name": "release-missing-exact-evidence", "model_id": model["id"], "evaluation_run_id": run["id"],
+            "gate_config": {"minimum": {"bbox_AP50": 0.0}, "required_evidence_refs": [{"type": "board", "id": "missing-board-id"}]},
+            "evidence": [{"type": "evaluation", "id": run["id"]}],
+        })
+        assert missing_ref.status_code == 201
+        assert missing_ref.json()["decision"] == "INCOMPLETE"
+        assert "board:missing-board-id" in missing_ref.json()["gate_result"]["evidence"]["missing_required_refs"]
 
 
 def test_empty_project_and_references_are_explicit_and_reversible():

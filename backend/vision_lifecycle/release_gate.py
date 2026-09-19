@@ -9,7 +9,7 @@ class GateConfigError(ValueError):
 
 
 _SECTIONS = {"minimum", "maximum", "max_regression", "direction"}
-_METADATA_KEYS = {"required_evidence"}
+_METADATA_KEYS = {"required_evidence", "required_evidence_refs"}
 _LOWER_IS_BETTER_PREFIXES = ("latency", "memory", "model_size", "power", "temperature", "startup", "failure", "error")
 
 
@@ -27,6 +27,9 @@ def _validate_config(config: dict[str, Any]) -> dict[str, dict[str, float]]:
         raise GateConfigError(f"Unsupported gate sections: {', '.join(sorted(unknown))}")
     if "required_evidence" in config and (not isinstance(config["required_evidence"], list) or any(not isinstance(value, str) for value in config["required_evidence"])):
         raise GateConfigError("required_evidence must be a list of strings")
+    refs = config.get("required_evidence_refs", [])
+    if not isinstance(refs, list) or any(not isinstance(value, dict) or not isinstance(value.get("type"), str) or not isinstance(value.get("id"), str) or not value["type"] or not value["id"] for value in refs):
+        raise GateConfigError("required_evidence_refs must be a list of objects with type and id strings")
     rules: dict[str, dict[str, float]] = {}
     for section in ("minimum", "maximum", "max_regression"):
         values = config.get(section, {})

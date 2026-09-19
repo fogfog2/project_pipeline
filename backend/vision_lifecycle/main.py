@@ -1715,10 +1715,17 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
     required_types = {str(value) for value in payload.gate_config.get("required_evidence", []) if isinstance(value, str)}
     captured_types = {item.evidence_type for item in captured_evidence}
     missing_evidence = sorted(required_types - captured_types)
+    required_refs = payload.gate_config.get("required_evidence_refs", [])
+    captured_refs = {(item.evidence_type, item.source_id) for item in captured_evidence}
+    ref_aliases = {"run": "evaluation", "benchmark": "board"}
+    missing_refs = sorted(f"{item['type']}:{item['id']}" for item in required_refs if (ref_aliases.get(str(item["type"]).lower(), str(item["type"]).lower()), item["id"]) not in captured_refs)
     if missing_evidence:
         result["status"] = "INCOMPLETE"
         result["reason"] = f"필수 Release evidence가 없습니다: {', '.join(missing_evidence)}"
-    result["evidence"] = {"captured": sorted(captured_types), "missing_required": missing_evidence}
+    if missing_refs:
+        result["status"] = "INCOMPLETE"
+        result["reason"] = f"필수 Release evidence 참조가 없습니다: {', '.join(missing_refs)}"
+    result["evidence"] = {"captured": sorted(captured_types), "missing_required": missing_evidence, "missing_required_refs": missing_refs}
     result["baseline_compatibility"] = baseline_compatibility
     values = payload.model_dump(exclude={"evidence"})
     release = Release(project_id=project_id, **values, gate_result=result, decision=result["status"])
@@ -1726,7 +1733,7 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
     for evidence in captured_evidence:
         evidence.release_id = release.id
         session.add(evidence)
-    record_audit(session, project_id, "release", release.id, "created", after={"name": release.name, "model_id": release.model_id, "decision": release.decision}, details={"evidence_count": len(captured_evidence), "required_evidence_missing": missing_evidence})
+    record_audit(session, project_id, "release", release.id, "created", after={"name": release.name, "model_id": release.model_id, "decision": release.decision}, details={"evidence_count": len(captured_evidence), "required_evidence_missing": missing_evidence, "required_evidence_refs_missing": missing_refs})
     session.commit(); session.refresh(release)
     response = as_dict(release)
     response["evidence"] = [as_dict(item) for item in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.release_id == release.id)).all()]
