@@ -54,3 +54,21 @@ def test_jsonl_manifest_is_validated_and_diffed(tmp_path: Path):
     changed = build_dataset_snapshot(task_kind="classification", format="jsonl", manifest_path=str(manifest), annotation_path=None)
     from vision_lifecycle.dataset_snapshot import diff_dataset_snapshots
     assert diff_dataset_snapshots(snapshot, changed)["modified"]["items"] == ["two"]
+
+
+def test_jsonl_dataset_preview_returns_bounded_records(tmp_path: Path):
+    from fastapi.testclient import TestClient
+    from vision_lifecycle.database import Base, engine
+    from vision_lifecycle.main import app
+
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    manifest = tmp_path / "preview.jsonl"
+    manifest.write_text('{"id":"one","path":"one.jpg"}\n{"id":"two","path":"two.jpg"}\n', encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "jsonl-preview"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "records", "version": "v1", "format": "jsonl", "manifest_path": str(manifest)}).json()
+        preview = client.get(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/preview?limit=1")
+        assert preview.status_code == 200
+        assert preview.json()["records"] == [{"id": "one", "path": "one.jpg"}]
+        assert preview.json()["truncated"] is True

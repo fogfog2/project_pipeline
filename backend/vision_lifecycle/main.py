@@ -429,10 +429,27 @@ def preview_dataset(project_id: str, dataset_id: str, limit: int = 12, session: 
     dataset = session.get(DatasetVersion, dataset_id)
     if not dataset or dataset.project_id != project_id:
         raise HTTPException(404, "Dataset not found")
-    if dataset.format != "coco" or not dataset.annotation_path:
-        raise HTTPException(422, "Preview currently requires a COCO annotation path")
     if limit < 1 or limit > 100:
         raise HTTPException(422, "limit must be between 1 and 100")
+    if dataset.format.lower() in {"jsonl", "ndjson", "common-jsonl"} and dataset.manifest_path:
+        records: list[dict] = []
+        try:
+            with Path(dataset.manifest_path).open(encoding="utf-8") as file:
+                for line in file:
+                    if not line.strip():
+                        continue
+                    value = json.loads(line)
+                    if isinstance(value, dict):
+                        records.append(value)
+                    if len(records) >= limit:
+                        break
+            with Path(dataset.manifest_path).open(encoding="utf-8") as source:
+                total = sum(1 for line in source if line.strip())
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise HTTPException(422, str(error)) from error
+        return {"dataset_id": dataset.id, "format": "jsonl", "records": records, "truncated": total > len(records)}
+    if dataset.format != "coco" or not dataset.annotation_path:
+        raise HTTPException(422, "Preview currently requires a COCO annotation path or JSONL manifest path")
     try:
         source = load_coco(dataset.annotation_path)
     except (OSError, ValueError, json.JSONDecodeError) as error:
