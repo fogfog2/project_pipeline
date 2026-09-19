@@ -903,6 +903,22 @@ def test_guided_project_starts_with_persisted_onboarding_steps():
         assert [step["step_id"] for step in payload["steps"]][:3] == ["project", "storage", "data"]
 
 
+def test_onboarding_contract_readiness_requires_label_split_and_evaluation_set():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project = client.post("/api/v1/projects", json={"name": "contract-readiness", "recipe_id": "blank"}).json()
+        project_id = project["id"]
+        before = client.get(f"/api/v1/projects/{project_id}/onboarding").json()
+        contracts = next(item for item in before["steps"] if item["step_id"] == "contracts")
+        assert contracts["readiness"] == {"ready": False, "reason": "missing required contract(s): LabelSchema, Split, EvaluationSet"}
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "images", "version": "v1"}).json()
+        client.post(f"/api/v1/projects/{project_id}/label-schemas", json={"name": "labels", "version": "v1", "dataset_id": dataset["id"], "classes": [{"id": 1, "name": "person"}]})
+        client.post(f"/api/v1/projects/{project_id}/splits", json={"name": "split", "version": "v1", "dataset_id": dataset["id"], "definition": {"splits": {"train": ["1"]}}})
+        still_blocked = client.get(f"/api/v1/projects/{project_id}/onboarding").json()
+        assert next(item for item in still_blocked["steps"] if item["step_id"] == "contracts")["readiness"]["reason"] == "missing required contract(s): EvaluationSet"
+
+
 def test_explicit_blank_recipe_also_starts_a_resumable_checklist():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

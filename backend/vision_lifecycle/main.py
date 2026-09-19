@@ -147,8 +147,9 @@ def _step_readiness(session: Session, project_id: str, step_id: str) -> tuple[bo
         ready = session.scalar(select(DatasetVersion.id).where(DatasetVersion.project_id == project_id, DatasetVersion.status != "archived")) is not None
         return ready, "a non-archived DatasetVersion is required"
     if step_id == "contracts":
-        ready = any(session.scalar(select(entity.id).where(entity.project_id == project_id)) is not None for entity in (LabelSchemaVersion, SplitVersion, EvaluationSetVersion, CalibrationSetVersion))
-        return ready, "at least one versioned data contract is required"
+        required = ((LabelSchemaVersion, "LabelSchema"), (SplitVersion, "Split"), (EvaluationSetVersion, "EvaluationSet"))
+        missing = [name for entity, name in required if session.scalar(select(entity.id).where(entity.project_id == project_id)) is None]
+        return not missing, "required contracts are connected" if not missing else f"missing required contract(s): {', '.join(missing)}"
     if step_id in {"model", "rtmdet", "yolox"}:
         query = select(ModelVersion).where(ModelVersion.project_id == project_id, ModelVersion.status != "archived")
         models = session.scalars(query).all()
