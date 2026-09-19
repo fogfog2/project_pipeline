@@ -1051,7 +1051,7 @@ def test_versioned_contract_schemas_are_available_from_api():
         assert response.status_code == 200
         body = response.json()
         assert body["schema_version"] == "1.0"
-        assert {"dataset", "model", "run", "result_manifest", "release"} <= set(body["schemas"])
+        assert {"dataset", "model", "run", "version_definition", "result_manifest", "release"} <= set(body["schemas"])
         assert "properties" in body["schemas"]["dataset"]
 
 
