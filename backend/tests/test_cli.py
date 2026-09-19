@@ -52,6 +52,25 @@ def test_cli_import_result_uses_same_manifest_contract(tmp_path: Path, monkeypat
         assert run.model_id == model_id and run.metrics["bbox_AP50"] == 0.5
 
 
+def test_cli_delete_dataset_uses_safe_draft_policy(tmp_path: Path, monkeypatch, capsys):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    source = tmp_path / "source"
+    source.mkdir()
+    with SessionLocal() as session:
+        project = Project(name="cli-delete-project")
+        session.add(project); session.flush()
+        from vision_lifecycle.models import DatasetVersion
+        dataset = DatasetVersion(project_id=project.id, name="scratch", version="v1", task_kind="unknown", format="folder", manifest_path=str(source))
+        session.add(dataset); session.commit(); project_id, dataset_id = project.id, dataset.id
+    monkeypatch.setattr(sys, "argv", ["visionops", "delete-dataset", project_id, dataset_id])
+    cli.main()
+    assert '"source_files_preserved": true' in capsys.readouterr().out
+    assert source.is_dir()
+    with SessionLocal() as session:
+        assert session.get(DatasetVersion, dataset_id) is None
+
+
 def test_cli_migrate_creates_versioned_registry(tmp_path: Path):
     db_path = tmp_path / "migrated.sqlite"
     environment = {**os.environ, "VISION_LIFECYCLE_DB": str(db_path), "PYTHONPATH": str(Path(__file__).parents[1])}

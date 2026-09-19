@@ -20,6 +20,39 @@ class ResultManifestReferenceError(ValueError):
     """Raised when a manifest points outside its project or to a missing entity."""
 
 
+class DatasetDeletionConflict(ValueError):
+    """Raised when a draft dataset is finalized or still referenced."""
+
+    def __init__(self, message: str, dependencies: list[dict] | None = None):
+        super().__init__(message)
+        self.dependencies = dependencies or []
+
+
+def delete_draft_dataset(session: Session, project_id: str, dataset_id: str) -> dict:
+    """Remove an unreferenced draft dataset from the registry, preserving files."""
+    dataset = session.get(DatasetVersion, dataset_id)
+    if not dataset or dataset.project_id != project_id:
+        raise LookupError("Dataset not found")
+    if dataset.status != "draft":
+        raise DatasetDeletionConflict("Only a draft DatasetVersion can be deleted; archive or create a new version instead")
+    dependencies: list[dict] = []
+    models = session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id, ModelVersion.source_dataset_id == dataset_id)).all()
+    runs = session.scalars(select(Run).where(Run.project_id == project_id, Run.dataset_id == dataset_id)).all()
+    for entity_type, entity in (("label_schema", LabelSchemaVersion), ("split", SplitVersion), ("evaluation_set", EvaluationSetVersion), ("calibration_set", CalibrationSetVersion)):
+        dependencies.extend({"kind": entity_type, "id": item.id, "name": item.name} for item in session.scalars(select(entity).where(entity.project_id == project_id, entity.dataset_id == dataset_id)).all())
+    dependencies.extend({"kind": "model", "id": item.id, "name": f"{item.name} {item.version}"} for item in models)
+    dependencies.extend({"kind": "run", "id": item.id, "name": item.name} for item in runs)
+    if dependencies:
+        raise DatasetDeletionConflict("DatasetVersion is referenced and cannot be deleted", dependencies)
+    artifacts = session.scalars(select(Artifact).where(Artifact.project_id == project_id, Artifact.owner_type == "dataset", Artifact.owner_id == dataset.id)).all()
+    record_audit(session, project_id, "dataset", dataset.id, "deleted", before={"name": dataset.name, "version": dataset.version, "status": dataset.status}, details={"source_files_preserved": True, "artifact_count": len(artifacts)})
+    for artifact in artifacts:
+        session.delete(artifact)
+    session.delete(dataset)
+    session.commit()
+    return {"deleted": True, "id": dataset_id, "source_files_preserved": True}
+
+
 def import_result_manifest(session: Session, project_id: str, value: dict) -> dict:
     """Validate and persist an external result through the shared service path."""
     manifest = validate_result_manifest(value)

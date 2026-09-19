@@ -18,7 +18,7 @@ from .dataset_snapshot import build_dataset_snapshot
 from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DatasetVersion, ModelVersion, Project, QuantizationRun, Run, StorageMapping, TargetProfile
 from .runner import run_worker
 from .serializers import as_dict
-from .service import import_result_manifest, safe_export, seed_demo
+from .service import delete_draft_dataset, import_result_manifest, safe_export, seed_demo
 from . import schemas as contract_schemas
 
 
@@ -111,6 +111,9 @@ def main() -> None:
     create_dataset = sub.add_parser("create-dataset", help="Register a DatasetVersion from a JSON object")
     create_dataset.add_argument("project_id")
     create_dataset.add_argument("manifest")
+    delete_dataset = sub.add_parser("delete-dataset", help="Delete an unreferenced draft DatasetVersion (source files are preserved)")
+    delete_dataset.add_argument("project_id")
+    delete_dataset.add_argument("dataset_id")
     create_model = sub.add_parser("create-model", help="Register a ModelVersion from a JSON object")
     create_model.add_argument("project_id")
     create_model.add_argument("manifest")
@@ -227,6 +230,10 @@ def main() -> None:
             if payload.get("manifest_path"):
                 register_artifact(session, args.project_id, kind="dataset-manifest", logical_name=f"{dataset.name}/{dataset.version}/manifest", owner_type="dataset", owner_id=dataset.id, source_path=payload["manifest_path"])
             session.commit(); session.refresh(dataset); _json(as_dict(dataset))
+        elif args.command == "delete-dataset":
+            if not session.get(Project, args.project_id):
+                raise ValueError("Project not found")
+            _json(delete_draft_dataset(session, args.project_id, args.dataset_id))
         elif args.command == "create-model":
             if not session.get(Project, args.project_id):
                 raise ValueError("Project not found")

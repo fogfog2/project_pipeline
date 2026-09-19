@@ -139,6 +139,7 @@ visionops inspect /data/instances_val.json
 visionops validate-coco /data/instances_val.json
 visionops create-project project.json
 visionops create-dataset PRJ-... dataset-version.json
+visionops delete-dataset PRJ-... DS-...       # 참조 없는 draft만 삭제, 원본 파일 보존
 visionops create-model PRJ-... model-version.json
 visionops import-result PRJ-... result-manifest.json
 visionops register-artifact PRJ-... artifact.json

@@ -34,7 +34,7 @@ from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, MmdetectionPreflightRequest, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from . import schemas as contract_schemas
 from .serializers import as_dict
-from .service import ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, import_result_manifest, lineage, overview, safe_export, seed_demo
+from .service import DatasetDeletionConflict, ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, delete_draft_dataset, import_result_manifest, lineage, overview, safe_export, seed_demo
 from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
@@ -373,35 +373,14 @@ def archive_dataset(project_id: str, dataset_id: str, session: Session = Depends
 
 @app.delete("/api/v1/projects/{project_id}/datasets/{dataset_id}", status_code=204)
 def delete_dataset(project_id: str, dataset_id: str, session: Session = Depends(get_session)):
-    """Delete only an unreferenced draft DatasetVersion from the registry.
-
-    Source files are always left in place. Finalized or referenced datasets use
-    archive/new-version semantics so historical lineage and release evidence
-    cannot be removed accidentally.
-    """
     require_project(session, project_id)
-    dataset = session.get(DatasetVersion, dataset_id)
-    if not dataset or dataset.project_id != project_id:
-        raise HTTPException(404, "Dataset not found")
-    if dataset.status != "draft":
-        raise HTTPException(409, "Only a draft DatasetVersion can be deleted; archive or create a new version instead")
-
-    dependencies: list[dict[str, str]] = []
-    models = session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id, ModelVersion.source_dataset_id == dataset_id)).all()
-    runs = session.scalars(select(Run).where(Run.project_id == project_id, Run.dataset_id == dataset_id)).all()
-    for entity_type, entity in (("label_schema", LabelSchemaVersion), ("split", SplitVersion), ("evaluation_set", EvaluationSetVersion), ("calibration_set", CalibrationSetVersion)):
-        dependencies.extend({"kind": entity_type, "id": item.id, "name": item.name} for item in session.scalars(select(entity).where(entity.project_id == project_id, entity.dataset_id == dataset_id)).all())
-    dependencies.extend({"kind": "model", "id": item.id, "name": f"{item.name} {item.version}"} for item in models)
-    dependencies.extend({"kind": "run", "id": item.id, "name": item.name} for item in runs)
-    if dependencies:
-        raise HTTPException(409, {"message": "DatasetVersion is referenced and cannot be deleted", "dependencies": dependencies})
-
-    artifact_rows = session.scalars(select(Artifact).where(Artifact.project_id == project_id, Artifact.owner_type == "dataset", Artifact.owner_id == dataset.id)).all()
-    record_audit(session, project_id, "dataset", dataset.id, "deleted", before={"name": dataset.name, "version": dataset.version, "status": dataset.status}, details={"source_files_preserved": True, "artifact_count": len(artifact_rows)})
-    for artifact in artifact_rows:
-        session.delete(artifact)
-    session.delete(dataset)
-    session.commit()
+    try:
+        delete_draft_dataset(session, project_id, dataset_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    except DatasetDeletionConflict as error:
+        detail = {"message": str(error), "dependencies": error.dependencies}
+        raise HTTPException(409, detail) from error
     return Response(status_code=204)
 
 
