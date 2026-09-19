@@ -47,7 +47,6 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
     }
     if (path.endsWith("/audit-events")) return (snapshot.audit_events || []) as T;
     if (path.endsWith("/datasets")) return (snapshot.datasets || []) as T;
-    if (path.includes("/datasets/") && path.endsWith("/diff?against_id=")) return {} as T;
     if (path.includes("/datasets/") && path.includes("/diff?against_id=")) {
       const url = new URL(path, window.location.origin); const parts = url.pathname.split("/"); const left = (snapshot.datasets || []).find((item: Dataset) => item.id === parts.at(-2)); const right = (snapshot.datasets || []).find((item: Dataset) => item.id === url.searchParams.get("against_id"));
       if (!left || !right) throw new Error("정적 snapshot에 Dataset 버전이 없습니다.");
