@@ -13,6 +13,17 @@ def test_detection_profile_requires_known_shape():
     assert profile.layout == "NCHW"
 
 
+def test_onnx_model_without_profile_is_not_marked_runnable():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "profile-required"}).json()["id"]
+        response = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "missing-profile", "version": "v1", "family": "fixture", "task_kind": "detection", "format": "onnx", "runnable": True})
+        assert response.status_code == 201
+        assert response.json()["runnable"] is False
+        assert response.json()["metadata_json"]["adapter_status"] == "required"
+
+
 def test_checked_in_onnx_fixtures_are_executable():
     result = infer("examples/fixtures/classification_mean.onnx", "examples/fixtures/images/classification.png", {"task_kind": "classification", "input_name": "images", "input_size": [2, 2]})
     assert result["top_indices"] == [2, 1, 0]

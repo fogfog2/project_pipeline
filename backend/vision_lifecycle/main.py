@@ -1193,6 +1193,12 @@ def create_model(project_id: str, payload: ModelCreate, session: Session = Depen
         if not source_run or source_run.project_id != project_id:
             raise HTTPException(422, "Source run must belong to this project")
     values = payload.model_dump()
+    metadata = dict(values.get("metadata_json") or {})
+    profile_key = "onnx_profile" if values.get("format") == "onnx" else "mmdeploy_profile" if values.get("format") == "mmdeploy" else None
+    if profile_key and not metadata.get(profile_key):
+        values["runnable"] = False
+        metadata["adapter_status"] = "required"
+        values["metadata_json"] = metadata
     values["artifact_sha256"] = file_sha256(values["artifact_path"]) if values.get("artifact_path") and Path(values["artifact_path"]).is_file() else None
     values["config_sha256"] = file_sha256(values["config_path"]) if values.get("config_path") and Path(values["config_path"]).is_file() else None
     model = ModelVersion(project_id=project_id, **values)
