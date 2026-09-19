@@ -53,6 +53,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - Classification folder와 CSV를 UI에서 별도 형식으로 선택해 잘못된 입력 경로가 빈 snapshot으로 저장되지 않도록 검증
 - GitHub Pages 정적 모드에서는 프로젝트·Dataset·모델·경로 검사 등 변경/실행 버튼을 비활성화하고 공개 snapshot 조회만 허용
 - 데이터 화면의 경로 검사 결과를 Dataset 초안 폼으로 자동 전달해 감지 형식·서버 경로를 다시 입력하지 않도록 연결
+- Dataset 확정 시 COCO·YOLO·분류·JSONL 형식 validator가 통과해야 finalized 상태가 되며, 오류는 확정 전에 표시
 - 검출 평가에서 invalid bbox/image/class/score를 성공 지표와 분리하고 최대 50건의 오류 이유를 보존
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - Release 생성 시 evaluation/board/quantization/artifact evidence를 snapshot·content hash로 고정하고 필수 evidence 누락을 INCOMPLETE으로 표시

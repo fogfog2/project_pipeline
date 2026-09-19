@@ -99,3 +99,20 @@ def test_classification_csv_snapshot_is_supported(tmp_path: Path):
     snapshot = build_dataset_snapshot(task_kind="classification", format="classification-csv", manifest_path=str(csv_path), annotation_path=None)
     assert snapshot["counts"] == {"images": 2, "categories": 2}
     assert snapshot["class_names"] == ["cat", "dog"]
+
+
+def test_finalize_rejects_invalid_coco_source(tmp_path: Path):
+    from fastapi.testclient import TestClient
+    from vision_lifecycle.database import Base, engine
+    from vision_lifecycle.main import app
+
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    annotation = tmp_path / "invalid.json"
+    annotation.write_text('{"images": [], "annotations": []}', encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "invalid-finalize"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "bad", "version": "v1", "format": "coco", "annotation_path": str(annotation)}).json()
+        response = client.post(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/finalize")
+        assert response.status_code == 422
+        assert "validation" in response.json()["detail"]

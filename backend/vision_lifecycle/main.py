@@ -20,8 +20,11 @@ from sqlalchemy.orm import Session
 
 from .database import SessionLocal, init_database
 from .adapters.coco import load_coco, validate_coco
+from .adapters.classification import validate_classification_csv, validate_classification_folder
 from .adapters.inspect import inspect_path
+from .adapters.jsonl import validate_jsonl
 from .adapters.registry import list_adapters
+from .adapters.yolo import validate_yolo_directory
 from .evaluators.detection import evaluate_coco_full, evaluate_coco_predictions
 from .evaluation_service import DatasetSourceChangedError, evaluate_coco_prediction_file, evaluate_onnx_batch_file
 from .evaluators.classification import evaluate_classification
@@ -414,9 +417,26 @@ def finalize_dataset(project_id: str, dataset_id: str, session: Session = Depend
     content_hash, fingerprints = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
     if not content_hash:
         raise HTTPException(422, "Finalize requires at least one accessible manifest or annotation file")
+    source_path = dataset.annotation_path or dataset.manifest_path
+    source_validation: dict | None = None
+    try:
+        if dataset.format.lower() == "coco":
+            source_validation = validate_coco(source_path or "")
+        elif dataset.format.lower() in {"yolo", "yolo-txt"}:
+            source_validation = validate_yolo_directory(source_path or "")
+        elif dataset.format.lower() in {"classification-folder", "classification"} and source_path and Path(source_path).is_dir():
+            source_validation = validate_classification_folder(source_path)
+        elif dataset.format.lower() in {"classification-csv", "csv"} or (dataset.format.lower() == "classification" and source_path and Path(source_path).is_file()):
+            source_validation = validate_classification_csv(source_path or "")
+        elif dataset.format.lower() in {"jsonl", "ndjson", "common-jsonl"}:
+            source_validation = validate_jsonl(source_path or "")
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(422, f"Dataset validation failed: {error}") from error
+    if source_validation is not None and source_validation.get("status") != "passed":
+        raise HTTPException(422, {"message": "Dataset validation must pass before finalization", "validation": source_validation})
     dataset.content_hash = content_hash
     dataset.snapshot = build_dataset_snapshot(task_kind=dataset.task_kind, format=dataset.format, manifest_path=dataset.manifest_path, annotation_path=dataset.annotation_path)
-    dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints, "finalized_at": "local"}
+    dataset.validation = {**dataset.validation, "source_fingerprints": fingerprints, "source_validation": source_validation, "finalized_at": "local"}
     dataset.status = "finalized"
     record_audit(session, project_id, "dataset", dataset.id, "finalized", before={"status": "draft"}, after={"status": dataset.status, "content_hash": dataset.content_hash})
     session.commit(); session.refresh(dataset)
