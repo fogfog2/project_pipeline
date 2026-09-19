@@ -2,6 +2,8 @@
 
 > 후속 UI 점검과 빈 프로젝트 기반 실습 요구사항은 [실습형 Lifecycle 통합 계획](guided-lifecycle-plan.md)에 통합했다. 본 문서는 코드 감사 근거와 A–G 기술 작업 분류로 유지하며, 최신 사용자 흐름과 구현 순서는 통합 계획을 따른다.
 
+최신 보수: 프로젝트/Git/기준 브랜치 설정 편집, 버전 있는 recipe 계약과 recipe 조회 API, POSIX runner process-group 취소, cursor 기반 Job 로그 API가 추가됐다. 아래 표의 항목은 여전히 전체 사용자 시나리오 기준의 남은 범위를 나타낸다.
+
 점검 기준: `586b534` 커밋의 소스와 테스트. 기준 문서: `../On-device_Vision_AI_Lifecycle_Management_Plan.md` 전체 22개 절 및 사용자 후속 요구사항.
 
 ## 1. 결론과 범위

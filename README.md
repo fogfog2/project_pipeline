@@ -25,6 +25,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - API와 별도 worker가 실행 프로세스를 나눠 가져도 DB의 `cancelling` marker를 worker가 감지해 취소를 완료
 - 연결·설정 화면에서 runner profile을 등록하고 Dataset/Model의 미확정 경로를 수정할 수 있으며, 작업 목록은 2초 주기로 상태·로그를 갱신
 - 작업 화면에서 전체 로그와 exit code/runner 결과를 펼쳐 보고, external worker 모드에서는 재시도 작업을 queue에 남겨 worker가 가져가도록 처리
+- `GET /api/v1/projects/{project_id}/jobs/{job_id}/logs?cursor=...`로 Unicode 안전한 cursor 기반 로그 증분 조회
 - typed QuantizationRun과 BoardBenchmark 등록·조회, calibration/model/target/evaluation lineage 검증
 - 양자화 encoding 파일을 별도 artifact로 hash 보존하고 실행·보드 화면에서 재검증
 - Target Profile에 hardware와 firmware/accelerator/runtime metadata를 분리해 기록
