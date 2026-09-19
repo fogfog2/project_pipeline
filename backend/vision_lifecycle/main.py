@@ -19,7 +19,7 @@ from .adapters.coco import load_coco, validate_coco
 from .adapters.inspect import inspect_path
 from .adapters.registry import list_adapters
 from .evaluators.detection import evaluate_coco_full, evaluate_coco_predictions
-from .evaluation_service import DatasetSourceChangedError, evaluate_coco_prediction_file
+from .evaluation_service import DatasetSourceChangedError, evaluate_coco_prediction_file, evaluate_onnx_batch_file
 from .evaluators.classification import evaluate_classification
 from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
@@ -1441,6 +1441,32 @@ def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, ses
     record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
     session.commit(); session.refresh(run)
     return {"run": as_dict(run), "result": {"metric_scope": result.get("metric_scope", "classification"), **details}}
+
+
+@app.post("/api/v1/projects/{project_id}/evaluations/onnx-batch/jobs", status_code=201)
+def queue_onnx_batch_evaluation(project_id: str, payload: OnnxBatchEvaluationCreate, session: Session = Depends(get_session)):
+    """Queue ONNX batch evaluation for the external worker without changing its contract."""
+    require_project(session, project_id)
+    dataset = session.get(DatasetVersion, payload.dataset_id)
+    model = session.get(ModelVersion, payload.model_id)
+    if not dataset or dataset.project_id != project_id or not model or model.project_id != project_id:
+        raise HTTPException(422, "Model and dataset must belong to this project")
+    evaluation_set = _project_entity(session, EvaluationSetVersion, payload.evaluation_set_id, project_id, "Evaluation set")
+    if evaluation_set and evaluation_set.dataset_id and evaluation_set.dataset_id != dataset.id:
+        raise HTTPException(422, "Evaluation set must reference the selected DatasetVersion")
+    if model.format != "onnx" or not model.artifact_path:
+        raise HTTPException(422, "ONNX batch evaluation requires a registered ONNX model artifact")
+    if not model.metadata_json.get("onnx_profile"):
+        raise HTTPException(422, "Model metadata must include an explicit onnx_profile")
+    _ensure_dataset_source_current(dataset)
+    input_json = {**payload.model_dump(), "project_id": project_id, "_runner_args": []}
+    job = Job(project_id=project_id, runner_id="builtin:evaluate-onnx-batch", command=["builtin:evaluate-onnx-batch"], input_json=input_json, status="queued")
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    if os.environ.get("VISION_LIFECYCLE_EXTERNAL_WORKER", "false").lower() != "true":
+        launch(job, [])
+    return as_dict(job)
 
 
 @app.post("/api/v1/comparisons")

@@ -40,7 +40,7 @@ def test_classification_inference_profile(tmp_path: Path):
     assert result["top_indices"] == [2, 1, 0]
 
 
-def test_onnx_batch_classification_evaluation_persists_run_and_input_artifact(tmp_path: Path):
+def test_onnx_batch_classification_evaluation_persists_run_and_input_artifact(tmp_path: Path, monkeypatch):
     onnx = pytest.importorskip("onnx")
     from PIL import Image
     from onnx import TensorProto, helper
@@ -70,6 +70,12 @@ def test_onnx_batch_classification_evaluation_persists_run_and_input_artifact(tm
         run = response.json()["run"]
         assert run["details"]["records_artifact_id"]
         assert any(item["kind"] == "onnx-records" for item in client.get(f"/api/v1/projects/{project_id}/artifacts").json())
+        monkeypatch.setenv("VISION_LIFECYCLE_EXTERNAL_WORKER", "true")
+        queued = client.post(f"/api/v1/projects/{project_id}/evaluations/onnx-batch/jobs", json={"model_id": registered["id"], "dataset_id": dataset["id"], "records_path": str(records_path)})
+        assert queued.status_code == 201
+        from vision_lifecycle.runner import worker_once
+        assert worker_once("onnx-worker") is True
+        assert client.get(f"/api/v1/projects/{project_id}/jobs").json()[0]["status"] == "completed"
 
 
 def test_inference_preview_falls_back_to_managed_model_copy(tmp_path: Path, monkeypatch):
