@@ -43,6 +43,12 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
     }
     if (path.endsWith("/audit-events")) return (snapshot.audit_events || []) as T;
     if (path.endsWith("/datasets")) return (snapshot.datasets || []) as T;
+    if (path.includes("/jobs/") && path.endsWith("/logs")) {
+      const jobId = path.split("/").at(-2);
+      const job = (snapshot.jobs || []).find((item: Job) => item.id === jobId);
+      if (!job) throw new Error("정적 snapshot에 작업이 없습니다.");
+      return { job_id: job.id, status: job.status, cursor: 0, next_cursor: (job.log || "").length, complete: true, text: job.log || "", result: job.result_json || {} } as T;
+    }
     if (path.endsWith("/jobs")) return (snapshot.jobs || []) as T;
     if (path.endsWith("/runners")) return (snapshot.runners || []) as T;
     if (path.endsWith("/targets")) return (snapshot.targets || []) as T;

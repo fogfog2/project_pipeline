@@ -67,6 +67,28 @@ def test_mock_board_job_completes():
         assert status == "completed"
 
 
+def test_job_logs_support_cursor_windows():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "job-log-cursor"}).json()["id"]
+        created = client.post(f"/api/v1/projects/{project_id}/jobs", json={"runner_id": "mock-board"}).json()
+        job_id = created["id"]
+        for _ in range(100):
+            response = client.get(f"/api/v1/projects/{project_id}/jobs/{job_id}/logs?limit=1")
+            if response.json()["status"] == "completed":
+                break
+            sleep(0.01)
+        first = client.get(f"/api/v1/projects/{project_id}/jobs/{job_id}/logs?cursor=0&limit=1")
+        assert first.status_code == 200
+        payload = first.json()
+        assert payload["next_cursor"] >= payload["cursor"]
+        second = client.get(f"/api/v1/projects/{project_id}/jobs/{job_id}/logs?cursor={payload['next_cursor']}&limit=200")
+        assert second.status_code == 200
+        assert second.json()["complete"] is True
+        assert "Mock board" in first.text + second.text
+
+
 def test_restart_marks_active_jobs_interrupted():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

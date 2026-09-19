@@ -1514,6 +1514,30 @@ def list_jobs(project_id: str, session: Session = Depends(get_session)):
     return [as_dict(x) for x in session.scalars(select(Job).where(Job.project_id == project_id).order_by(Job.created_at.desc())).all()]
 
 
+@app.get("/api/v1/projects/{project_id}/jobs/{job_id}/logs")
+def job_logs(project_id: str, job_id: str, cursor: int = 0, limit: int = 200, session: Session = Depends(get_session)):
+    """Read an append-only log window so clients can reconnect without replaying it all."""
+    require_project(session, project_id)
+    job = session.get(Job, job_id)
+    if not job or job.project_id != project_id:
+        raise HTTPException(404, "Job not found")
+    if cursor < 0 or limit < 1 or limit > 2_000:
+        raise HTTPException(422, "cursor must be non-negative and limit must be between 1 and 2000")
+    source = job.log or ""
+    start = min(cursor, len(source))
+    # Cursor is a byte-independent character offset because the stored log is
+    # Unicode text. Returning the next offset makes the contract safe for
+    # Korean output as well as ASCII runner output.
+    end = min(len(source), start + limit * 4_096)
+    window = source[start:end]
+    if end < len(source):
+        boundary = window.rfind("\n")
+        if boundary > 0:
+            end = start + boundary + 1
+            window = source[start:end]
+    return {"job_id": job.id, "status": job.status, "cursor": start, "next_cursor": end, "complete": end >= len(source), "text": window, "result": job.result_json or {}}
+
+
 @app.get("/api/v1/projects/{project_id}/runners")
 def list_runners(project_id: str, session: Session = Depends(get_session)):
     require_project(session, project_id)
