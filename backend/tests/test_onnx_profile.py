@@ -27,6 +27,16 @@ def test_onnx_model_without_profile_is_not_marked_runnable():
         assert updated.json()["runnable"] is False
 
 
+def test_onnx_model_rejects_malformed_profile():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "bad-profile"}).json()["id"]
+        response = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "bad", "version": "v1", "family": "fixture", "format": "onnx", "metadata_json": {"onnx_profile": {"task_kind": "detection", "input_size": [0, 640]}}})
+        assert response.status_code == 422
+        assert "Invalid ONNX profile" in response.json()["detail"]
+
+
 def test_checked_in_onnx_fixtures_are_executable():
     result = infer("examples/fixtures/classification_mean.onnx", "examples/fixtures/images/classification.png", {"task_kind": "classification", "input_name": "images", "input_size": [2, 2]})
     assert result["top_indices"] == [2, 1, 0]

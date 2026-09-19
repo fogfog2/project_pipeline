@@ -28,7 +28,7 @@ from .adapters.yolo import validate_yolo_directory
 from .evaluators.detection import evaluate_coco_full, evaluate_coco_predictions
 from .evaluation_service import DatasetSourceChangedError, evaluate_coco_prediction_file, evaluate_onnx_batch_file
 from .evaluators.classification import evaluate_classification
-from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
+from .inference.onnx import OnnxProfile, diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, FieldDataBatch, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
@@ -1199,6 +1199,11 @@ def create_model(project_id: str, payload: ModelCreate, session: Session = Depen
         values["runnable"] = False
         metadata["adapter_status"] = "required"
         values["metadata_json"] = metadata
+    if values.get("format") == "onnx" and metadata.get("onnx_profile"):
+        try:
+            OnnxProfile.from_dict(metadata["onnx_profile"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise HTTPException(422, f"Invalid ONNX profile: {error}") from error
     values["artifact_sha256"] = file_sha256(values["artifact_path"]) if values.get("artifact_path") and Path(values["artifact_path"]).is_file() else None
     values["config_sha256"] = file_sha256(values["config_path"]) if values.get("config_path") and Path(values["config_path"]).is_file() else None
     model = ModelVersion(project_id=project_id, **values)
@@ -1231,6 +1236,11 @@ def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: 
             model.runnable = False
             metadata["adapter_status"] = "required"
             model.metadata_json = metadata
+        elif model.format == "onnx":
+            try:
+                OnnxProfile.from_dict(metadata["onnx_profile"])
+            except (KeyError, TypeError, ValueError) as error:
+                raise HTTPException(422, f"Invalid ONNX profile: {error}") from error
     if "alias" in values and values["alias"] != previous_alias:
         session.add(ModelAliasHistory(project_id=project_id, model_id=model.id, previous_alias=previous_alias, new_alias=model.alias, reason=alias_reason))
     if "artifact_path" in values:
