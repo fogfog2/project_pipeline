@@ -291,6 +291,16 @@ def test_project_connection_settings_are_editable_and_persisted():
         assert persisted["default_branch"] == "main"
 
 
+def test_overview_reports_explicit_readiness_checks():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "readiness"}).json()["id"]
+        overview = client.get(f"/api/v1/projects/{project_id}/overview").json()
+        assert overview["readiness"]["status"] == "not_started"
+        assert {item["id"] for item in overview["readiness"]["checks"]} == {"storage", "dataset", "model", "evaluation"}
+
+
 def test_recipe_contract_is_read_only_and_versioned():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

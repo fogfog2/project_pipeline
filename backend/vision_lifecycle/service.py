@@ -32,13 +32,38 @@ def overview(session: Session, project_id: str) -> dict:
     models = session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()
     runs = session.scalars(select(Run).where(Run.project_id == project_id).order_by(Run.created_at.desc())).all()
     jobs = session.scalars(select(Job).where(Job.project_id == project_id).order_by(Job.created_at.desc())).all()
-    incomplete = sum(not m.source_dataset_id or not m.config_path for m in models)
+    artifacts = session.scalars(select(Artifact).where(Artifact.project_id == project_id, Artifact.status != "superseded")).all()
+    model_checks: list[dict] = []
+    for model in models:
+        owned = {item.kind for item in artifacts if item.owner_type == "model" and item.owner_id == model.id}
+        checks = {
+            "dataset": bool(model.source_dataset_id),
+            "training_run": bool(model.source_run_id and any(run.id == model.source_run_id and run.kind == "training" for run in runs)),
+            "model_artifact": bool(model.artifact_path or "model" in owned),
+            "config": bool(model.config_path or "config" in owned),
+            "profile": bool(model.format not in {"onnx", "mmdeploy"} or model.metadata_json.get("onnx_profile") or model.metadata_json.get("mmdeploy_profile")),
+        }
+        model_checks.append({"model_id": model.id, "name": f"{model.family} {model.version}", "checks": checks, "missing": [key for key, value in checks.items() if not value]})
+    incomplete = sum(bool(item["missing"]) for item in model_checks)
+    model_completeness = 0 if not model_checks else round((len(model_checks) - incomplete) / len(model_checks) * 100)
+    storage_ready = any(item.status == "available" for item in session.scalars(select(StorageMapping).where(StorageMapping.project_id == project_id)).all())
+    finalized_dataset = any(item.status == "finalized" for item in datasets)
+    completed_evaluation = any(item.kind == "evaluation" and item.status == "completed" for item in runs)
+    readiness_checks = [
+        {"id": "storage", "label": "Storage mapping", "status": "ready" if storage_ready else "missing"},
+        {"id": "dataset", "label": "Finalized DatasetVersion", "status": "ready" if finalized_dataset else "missing"},
+        {"id": "model", "label": "Model provenance", "status": "ready" if model_checks and not incomplete else "partial" if model_checks else "missing", "models": model_checks},
+        {"id": "evaluation", "label": "Completed evaluation", "status": "ready" if completed_evaluation else "missing"},
+    ]
+    ready_count = sum(item["status"] == "ready" for item in readiness_checks)
+    readiness = {"status": "ready" if ready_count == len(readiness_checks) else "partial" if ready_count else "not_started", "ready_count": ready_count, "total": len(readiness_checks), "checks": readiness_checks}
     return {
         "project": project,
         "counts": {"datasets": len(datasets), "models": len(models), "runs": len(runs), "jobs": len(jobs)},
         "baseline": next((m for m in models if m.alias == "baseline"), None),
         "candidate": next((m for m in models if m.alias == "candidate"), None),
-        "lineage_completeness": 0 if not models else round((len(models) - incomplete) / len(models) * 100),
+        "lineage_completeness": model_completeness,
+        "readiness": readiness,
         "recent_runs": runs[:5],
         "next_actions": ([
             "1단계: 이미지·annotation 또는 기존 manifest 경로를 연결하고 형식을 검사하세요.",
@@ -285,6 +310,7 @@ def safe_export(session: Session, project_id: str) -> dict:
     overview_export = {
         "counts": summary["counts"],
         "lineage_completeness": summary["lineage_completeness"],
+        "readiness": summary.get("readiness", {}),
         "baseline": safe(summary["baseline"]) if summary["baseline"] else None,
         "candidate": safe(summary["candidate"]) if summary["candidate"] else None,
         "recent_runs": [safe(item) for item in summary["recent_runs"]],
