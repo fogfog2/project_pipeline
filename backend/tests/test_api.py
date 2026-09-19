@@ -146,6 +146,30 @@ def test_external_worker_claims_one_queued_job():
     assert worker_once() is False
 
 
+def test_external_worker_claim_records_lease_and_prevents_double_claim():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    from vision_lifecycle.database import SessionLocal
+    from vision_lifecycle.models import Project
+    from vision_lifecycle.runner import claim_next_job
+
+    with SessionLocal() as session:
+        project = Project(name="leased-worker-project")
+        session.add(project); session.flush()
+        job = Job(project_id=project.id, runner_id="mock-board", command=["builtin:mock-board"], input_json={"_runner_args": []}, status="queued")
+        session.add(job); session.commit(); job_id = job.id
+    first = claim_next_job(worker_id="worker-a", lease_seconds=60)
+    second = claim_next_job(worker_id="worker-b", lease_seconds=60)
+    assert first and first[0] == job_id
+    assert second is None
+    with SessionLocal() as session:
+        claimed = session.get(Job, job_id)
+        assert claimed.status == "running"
+        assert claimed.lease_owner == "worker-a"
+        assert claimed.lease_expires_at is not None
+        assert claimed.attempt_count == 1
+
+
 def test_retry_keeps_queued_for_external_worker(monkeypatch):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

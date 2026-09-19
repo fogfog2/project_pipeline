@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 import signal
+import socket
 import subprocess
 import threading
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .database import SessionLocal
 from sqlalchemy import select, update
@@ -78,6 +80,8 @@ def recover_interrupted(*, include_queued: bool = True) -> int:
         jobs = session.query(Job).filter(Job.status.in_(statuses)).all()
         for job in jobs:
             job.status = "interrupted"
+            job.lease_owner = None
+            job.lease_expires_at = None
             job.log = f"{job.log}Service restarted; manual retry is required.\n"
             changed += 1
         session.commit()
@@ -92,6 +96,9 @@ def _append_log(job_id: str, message: str, *, status: str | None = None, result:
         job.log = f"{job.log}{message}"
         if status:
             job.status = status
+            if status in {"completed", "failed", "cancelled", "timed_out", "interrupted"}:
+                job.lease_owner = None
+                job.lease_expires_at = None
         if result is not None:
             job.result_json = result
         try:
@@ -223,13 +230,19 @@ def run_job(job_id: str, runner_id: str, args: list[str]) -> None:
         _run_profile(job_id, runner_id, args)
 
 
-def claim_next_job() -> tuple[str, str, list[str]] | None:
-    """Atomically claim one queued job for an external worker process."""
+def worker_identity() -> str:
+    return f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"
+
+
+def claim_next_job(worker_id: str | None = None, lease_seconds: int = 300) -> tuple[str, str, list[str]] | None:
+    """Atomically claim one queued job and record its worker lease."""
+    owner = worker_id or worker_identity()
+    expires = datetime.now(UTC) + timedelta(seconds=max(10, lease_seconds))
     with SessionLocal() as session:
         candidate = session.scalar(select(Job).where(Job.status == "queued").order_by(Job.created_at).limit(1))
         if not candidate:
             return None
-        result = session.execute(update(Job).where(Job.id == candidate.id, Job.status == "queued").values(status="running"))
+        result = session.execute(update(Job).where(Job.id == candidate.id, Job.status == "queued").values(status="running", lease_owner=owner, lease_expires_at=expires, attempt_count=Job.attempt_count + 1))
         if result.rowcount != 1:
             session.rollback()
             return None
@@ -238,8 +251,8 @@ def claim_next_job() -> tuple[str, str, list[str]] | None:
         return candidate.id, candidate.runner_id, args
 
 
-def worker_once() -> bool:
-    claimed = claim_next_job()
+def worker_once(worker_id: str | None = None) -> bool:
+    claimed = claim_next_job(worker_id=worker_id)
     if not claimed:
         return False
     run_job(*claimed)
@@ -248,8 +261,9 @@ def worker_once() -> bool:
 
 def run_worker(*, poll_seconds: float = 1.0, once: bool = False) -> None:
     recover_interrupted(include_queued=False)
+    worker_id = worker_identity()
     while True:
-        worked = worker_once()
+        worked = worker_once(worker_id)
         if once:
             return
         if not worked:

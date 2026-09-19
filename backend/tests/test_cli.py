@@ -59,5 +59,5 @@ def test_cli_migrate_creates_versioned_registry(tmp_path: Path):
     assert "Registry migrations applied" in result.stdout
     with sqlite3.connect(db_path) as connection:
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        assert revision == "2624aaa6dd5c"
+        assert revision == "177ea08cc805"
         assert connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'").fetchone()

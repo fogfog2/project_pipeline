@@ -2,7 +2,7 @@
 
 > 후속 UI 점검과 빈 프로젝트 기반 실습 요구사항은 [실습형 Lifecycle 통합 계획](guided-lifecycle-plan.md)에 통합했다. 본 문서는 코드 감사 근거와 A–G 기술 작업 분류로 유지하며, 최신 사용자 흐름과 구현 순서는 통합 계획을 따른다.
 
-최신 보수: 프로젝트/Git/기준 브랜치 설정 편집, 버전 있는 recipe 계약과 recipe 조회 API, POSIX runner process-group 취소, cursor 기반 Job 로그 API, overview의 저장된 근거별 readiness와 모델 provenance 누락 표시, Alembic baseline 및 `visionops migrate`가 추가됐다. 아래 표의 항목은 여전히 전체 사용자 시나리오 기준의 남은 범위를 나타낸다.
+최신 보수: 프로젝트/Git/기준 브랜치 설정 편집, 버전 있는 recipe 계약과 recipe 조회 API, POSIX runner process-group 취소, cursor 기반 Job 로그 API, overview의 저장된 근거별 readiness와 모델 provenance 누락 표시, Alembic baseline 및 `visionops migrate`, 다중 worker의 원자적 queue claim·lease owner·만료 시각·시도 횟수와 작업 표 표시가 추가됐다. 아래 표의 항목은 여전히 전체 사용자 시나리오 기준의 남은 범위를 나타낸다.
 
 점검 기준: `586b534` 커밋의 소스와 테스트. 기준 문서: `../On-device_Vision_AI_Lifecycle_Management_Plan.md` 전체 22개 절 및 사용자 후속 요구사항.
 
@@ -54,7 +54,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 분류 confusion/per-class와 COCO per-class/invalid 결과를 Run.details에 저장하고 재조회 가능하며, classification record의 명시적 confidence에 대해 ECE/bin과 `slice`/`slices`별 지표를 계산한다. micro 지표, 고정 Top-K 규약, detection slice·오류 파일·시각화 artifact는 남아 있다 |
 | S14 | §12,17: baseline/candidate 공식 비교 | 부분 구현·정확성 보완 필요 | 완료된 평가 중 동일 dataset·전체 평가 config·evaluator·class mapping 계약을 만족하는 최신 pair를 선택하고 latency 계약을 별도 검사한다. 다중 세트·slice·전체 설정 hash/승인 이력은 남아 있다. `service.py:compare_models` |
 | S15 | §13: target profile·외부 보드 결과 | 부분 구현 | target 행 등록·board import 연결과 metric 유한값/`source`·`scope`·batch·warmup·iterations·units 측정 계약 검증을 제공한다. TargetProfile에 hardware와 firmware/accelerator/runtime metadata를 별도 JSON으로 보존하고 UI에서 입력·조회한다. 보드 raw output 파일도 artifact로 hash/managed copy를 보존하고 재검증한다. board 결과에서 공통 평가 연결은 남아 있다 |
-| S16 | §13: 외부 작업 실행·취소·복구 | 부분 구현 | subprocess runner와 독립 worker 모드, 재시작 복구, 전체 로그·exit code 표시, 외부 worker 재시도 queue 보존을 제공한다. API 재시작은 running만 `interrupted`로 바꾸고 queued는 claim 가능 상태로 둔다. 취소 의도를 먼저 저장하고 POSIX process group을 종료하며 timeout도 하위 프로세스까지 정리한다. API와 다른 worker가 프로세스를 소유해도 DB `cancelling` marker를 worker watcher가 감지한다. 실시간 websocket 로그·취소 lease/다중 worker 경쟁 제어 보완이 남아 있다. `runner.py`, `main.py` |
+| S16 | §13: 외부 작업 실행·취소·복구 | 부분 구현 | subprocess runner와 독립 worker 모드, 재시작 복구, 전체 로그·exit code 표시, 외부 worker 재시도 queue 보존을 제공한다. API 재시작은 running만 `interrupted`로 바꾸고 queued는 claim 가능 상태로 둔다. queue claim은 worker owner·lease 만료 시각·attempt count를 기록하고 조건부 update로 중복 claim을 막는다. 취소 의도를 먼저 저장하고 POSIX process group을 종료하며 timeout도 하위 프로세스까지 정리한다. 실시간 websocket 로그와 만료 lease 자동 회수/heartbeat가 남아 있다. `runner.py`, `main.py` |
 | S17 | §14: 다단계 release gate·승인 | 부분 구현·정확성 보완 필요 | 단일 평가 scalar 규칙과 baseline dataset/evaluator/protocol/scope/class mapping 호환성 검사를 제공하며, Release 생성 시 evaluation/board/quantization/artifact evidence snapshot/hash와 required evidence 누락 INCOMPLETE를 기록한다. 주요 registry 변경의 local AuditEvent 이력은 제공하지만 다중 세트·critical class·인증된 승인자·승인 워크플로는 남아 있다 |
 | S18 | §15,20: Production부터 원본까지 drill-down | 부분 구현 | Dataset·Model·Run 소유 artifact 노드와 `has_artifact` edge를 lineage API/화면에서 조회 가능. 양자화·Release 증거의 상세 drill-down과 변경 이력은 남아 있다 |
 | S19 | 후속 요구: 처음 사용자 UI만으로 온보딩 | 부분 구현 | 프로젝트/모델/target 입력, 경로 검사, recipe별 저장·재개 wizard와 단계별 readiness/막힌 이유 표시를 제공한다. dataset 등록·확정, Git/storage/runner 편집, 평가 실행·release 폼의 통합 wizard 흐름은 남아 있다. `frontend/src/main.tsx` |

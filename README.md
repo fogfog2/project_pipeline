@@ -46,6 +46,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - Release 생성 시 evaluation/board/quantization/artifact evidence를 snapshot·content hash로 고정하고 필수 evidence 누락을 INCOMPLETE으로 표시
 - 감사 로그 화면에서 프로젝트·Dataset·Storage·모델·외부 Run·Release의 생성/수정/보관/복원과 변경 전후 값을 확인하고, export에는 경로·명령·비밀값을 제거한 이벤트를 포함
+- 독립 worker queue는 조건부 claim으로 중복 실행을 막고 worker lease owner·만료 시각·시도 횟수를 작업 화면과 API에 기록
 - Dataset·Model·Storage 보관 전 dependency impact를 조회해 연결된 Run·양자화·보드·Release와 inventory asset/job을 확인하며, 보관은 언제든 복원할 수 있음
 - 현장 실패 사례 FieldDataBatch를 원본 모델·Dataset·예측/수정 label artifact·candidate DatasetVersion과 연결
 - regression gate는 baseline의 dataset·evaluator·protocol·scope·class mapping 계약이 맞을 때만 비교하며, 근거가 없으면 INCOMPLETE

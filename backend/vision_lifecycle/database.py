@@ -82,3 +82,7 @@ def init_database() -> None:
         board_columns = {column["name"] for column in inspect(engine).get_columns("board_benchmarks")}
         if "raw_output_path" not in board_columns:
             connection.exec_driver_sql("ALTER TABLE board_benchmarks ADD COLUMN raw_output_path TEXT")
+        job_columns = {column["name"] for column in inspect(engine).get_columns("jobs")}
+        for name, declaration in {"lease_owner": "VARCHAR(160)", "lease_expires_at": "DATETIME", "attempt_count": "INTEGER NOT NULL DEFAULT 0"}.items():
+            if name not in job_columns:
+                connection.exec_driver_sql(f"ALTER TABLE jobs ADD COLUMN {name} {declaration}")

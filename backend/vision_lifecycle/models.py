@@ -281,6 +281,9 @@ class Job(Base, Timestamped):
     input_json: Mapped[dict] = mapped_column(JSON, default=dict)
     result_json: Mapped[dict] = mapped_column(JSON, default=dict)
     log: Mapped[str] = mapped_column(Text, default="")
+    lease_owner: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(default=0)
 
 
 class RunnerProfile(Base, Timestamped):
