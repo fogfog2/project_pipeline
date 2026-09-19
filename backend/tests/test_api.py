@@ -166,7 +166,7 @@ def test_external_worker_claim_records_lease_and_prevents_double_claim():
     Base.metadata.create_all(engine)
     from vision_lifecycle.database import SessionLocal
     from vision_lifecycle.models import Project
-    from vision_lifecycle.runner import claim_next_job
+    from vision_lifecycle.runner import claim_next_job, renew_lease
 
     with SessionLocal() as session:
         project = Project(name="leased-worker-project")
@@ -177,6 +177,8 @@ def test_external_worker_claim_records_lease_and_prevents_double_claim():
     second = claim_next_job(worker_id="worker-b", lease_seconds=60)
     assert first and first[0] == job_id
     assert second is None
+    assert renew_lease(job_id, "worker-a", lease_seconds=60) is True
+    assert renew_lease(job_id, "worker-b", lease_seconds=60) is False
     with SessionLocal() as session:
         claimed = session.get(Job, job_id)
         assert claimed.status == "running"

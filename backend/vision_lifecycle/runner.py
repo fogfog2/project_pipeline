@@ -253,6 +253,26 @@ def reclaim_expired_leases(*, now: datetime | None = None) -> int:
         return len(jobs)
 
 
+def renew_lease(job_id: str, worker_id: str, *, lease_seconds: int = 300) -> bool:
+    """Extend a lease only while this worker still owns the running job."""
+    expires = datetime.now(UTC) + timedelta(seconds=max(10, lease_seconds))
+    with SessionLocal() as session:
+        result = session.execute(
+            update(Job)
+            .where(Job.id == job_id, Job.status.in_(["running", "cancelling"]), Job.lease_owner == worker_id)
+            .values(lease_expires_at=expires)
+        )
+        session.commit()
+        return result.rowcount == 1
+
+
+def _lease_heartbeat(job_id: str, worker_id: str, stop_event: threading.Event, lease_seconds: int = 300) -> None:
+    interval = max(1.0, min(30.0, lease_seconds / 3))
+    while not stop_event.wait(interval):
+        if not renew_lease(job_id, worker_id, lease_seconds=lease_seconds):
+            return
+
+
 def claim_next_job(worker_id: str | None = None, lease_seconds: int = 300) -> tuple[str, str, list[str]] | None:
     """Atomically claim one queued job and record its worker lease."""
     reclaim_expired_leases()
@@ -272,10 +292,18 @@ def claim_next_job(worker_id: str | None = None, lease_seconds: int = 300) -> tu
 
 
 def worker_once(worker_id: str | None = None) -> bool:
-    claimed = claim_next_job(worker_id=worker_id)
+    owner = worker_id or worker_identity()
+    claimed = claim_next_job(worker_id=owner)
     if not claimed:
         return False
-    run_job(*claimed)
+    stop_event = threading.Event()
+    heartbeat = threading.Thread(target=_lease_heartbeat, args=(claimed[0], owner, stop_event), daemon=True)
+    heartbeat.start()
+    try:
+        run_job(*claimed)
+    finally:
+        stop_event.set()
+        heartbeat.join(timeout=1.0)
     return True
 
 
