@@ -168,6 +168,12 @@ visionops restore --input backups/registry.sqlite
 
 `backup`은 SQLite 파일과 함께 `<output>.manifest.json`에 프로젝트·Storage ID와 artifact hash를 기록하고, 접근 가능한 managed artifact 파일을 `<output>.artifacts/`에 복사한다. `restore`는 manifest와 SQLite integrity를 검사한 뒤 managed artifact를 원래 등록 경로에 복원하고 파일 hash를 확인한다. Pages 공개용 결과를 만들 때는 `export`를 사용하며, backup 파일에는 로컬 경로와 설정이 포함될 수 있으므로 공개 저장소에 올리지 않는다.
 
+Storage root를 다른 디렉터리로 옮길 때는 UI의 **루트 변경**에서 참조 경로 재작성 여부를 명시하거나 CLI를 사용한다. `--rewrite-references`를 지정하면 이전 root 아래의 Dataset·Model·Artifact 절대 경로만 새 root 기준으로 바꾸고, logical storage ID와 lineage ID는 유지한다.
+
+```bash
+visionops remap-storage PRJ-... STORE-... /mnt/new-vision-data --rewrite-references
+```
+
 DB schema 변경은 `migrations/versions/`의 Alembic revision으로 관리한다. 기존 0.1.x registry에서 `visionops migrate`를 처음 실행하면 호환 보정 상태를 현재 baseline revision으로 기록하고, 새 registry에서는 모든 테이블을 revision으로 생성한다. migration 전에는 backup을 만든다.
 
 ## RTMDet·YOLOX 사용 흐름

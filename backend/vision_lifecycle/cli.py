@@ -19,7 +19,8 @@ from .dataset_snapshot import build_dataset_snapshot
 from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DatasetVersion, ModelVersion, Project, QuantizationRun, Run, StorageMapping, TargetProfile
 from .runner import run_worker
 from .serializers import as_dict
-from .service import delete_draft_dataset, import_result_manifest, safe_export, seed_demo
+from .service import delete_draft_dataset, import_result_manifest, rewrite_storage_references, safe_export, seed_demo
+from .storage import storage_status
 from . import schemas as contract_schemas
 
 
@@ -185,6 +186,11 @@ def main() -> None:
     restore = sub.add_parser("restore", help="Restore the local registry from a SQLite backup")
     restore.add_argument("--input", required=True, help="Source SQLite backup file")
     restore.add_argument("--manifest", help="Optional backup manifest JSON (defaults to <input>.manifest.json)")
+    remap = sub.add_parser("remap-storage", help="Move a storage root and optionally rewrite registered absolute references")
+    remap.add_argument("project_id")
+    remap.add_argument("storage_id")
+    remap.add_argument("new_root")
+    remap.add_argument("--rewrite-references", action="store_true", help="Rewrite Dataset/Model/Artifact paths under the old root")
     args = parser.parse_args()
 
     if args.command == "migrate":
@@ -258,6 +264,18 @@ def main() -> None:
             _json(as_dict(seed_demo(session)))
         elif args.command == "projects":
             _json([as_dict(p) for p in session.scalars(select(Project)).all()])
+        elif args.command == "remap-storage":
+            mapping = session.get(StorageMapping, args.storage_id)
+            if not mapping or mapping.project_id != args.project_id:
+                raise ValueError("Storage mapping not found")
+            old_root = mapping.root_path
+            references = rewrite_storage_references(session, args.project_id, old_root, args.new_root) if args.rewrite_references else {"rewritten": 0, "references": []}
+            mapping.root_path = args.new_root
+            validation = storage_status(mapping.root_path)
+            mapping.status = validation["status"]
+            mapping.last_validation = {**validation, "references": references}
+            session.commit(); session.refresh(mapping)
+            _json({"storage": as_dict(mapping), "references": references})
         elif args.command == "create-project":
             payload = _read_json(args.manifest)
             if session.scalar(select(Project).where(Project.name == payload.get("name"))):

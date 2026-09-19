@@ -37,7 +37,7 @@ from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, MmdetectionPreflightRequest, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from . import schemas as contract_schemas
 from .serializers import as_dict
-from .service import DatasetDeletionConflict, ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, delete_draft_dataset, import_result_manifest, lineage, overview, safe_export, seed_demo
+from .service import DatasetDeletionConflict, ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, delete_draft_dataset, import_result_manifest, lineage, overview, rewrite_storage_references, safe_export, seed_demo
 from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
@@ -596,16 +596,21 @@ def update_storage(project_id: str, storage_id: str, payload: StorageMappingUpda
     if not mapping or mapping.project_id != project_id:
         raise HTTPException(404, "Storage mapping not found")
     values = payload.model_dump(exclude_unset=True)
+    rewrite_references = values.pop("rewrite_references", False)
     before = {key: getattr(mapping, key) for key in values}
+    old_root = mapping.root_path
     for key, value in values.items():
         setattr(mapping, key, value)
     if "root_path" in values:
+        references = rewrite_storage_references(session, project_id, old_root, mapping.root_path) if rewrite_references else {"rewritten": 0, "references": []}
         validation = storage_status(mapping.root_path)
         mapping.status = validation["status"]
         mapping.last_validation = validation
         if validation["status"] == "available":
-            mapping.last_validation = {**validation, "assets": _refresh_storage_assets(session, mapping)}
-    record_audit(session, project_id, "storage", mapping.id, "updated", before=before, after={key: getattr(mapping, key) for key in values})
+            mapping.last_validation = {**validation, "assets": _refresh_storage_assets(session, mapping), "references": references}
+        else:
+            mapping.last_validation = {**validation, "references": references}
+    record_audit(session, project_id, "storage", mapping.id, "updated", before=before, after={key: getattr(mapping, key) for key in values}, details={"rewrite_references": rewrite_references})
     session.commit(); session.refresh(mapping)
     return as_dict(mapping)
 

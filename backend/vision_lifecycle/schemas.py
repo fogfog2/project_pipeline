@@ -109,6 +109,7 @@ class StorageMappingUpdate(BaseModel):
     root_path: str | None = None
     read_only: bool | None = None
     notes: str | None = None
+    rewrite_references: bool = False
 
 
 class StorageBrowseRequest(BaseModel):

@@ -900,6 +900,32 @@ def test_storage_impact_includes_inventory_assets_and_jobs():
         assert {item["kind"] for item in impact.json()["dependencies"]} >= {"asset", "inventory-job"}
 
 
+def test_storage_remap_can_rewrite_registered_absolute_references(tmp_path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    old_root = tmp_path / "old-root"
+    new_root = tmp_path / "new-root"
+    (old_root / "annotations").mkdir(parents=True)
+    (new_root / "annotations").mkdir(parents=True)
+    content = "{\"images\":[],\"annotations\":[],\"categories\":[]}"
+    old_file = old_root / "annotations" / "dataset.json"
+    new_file = new_root / "annotations" / "dataset.json"
+    old_file.write_text(content, encoding="utf-8")
+    new_file.write_text(content, encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "storage-remap"}).json()["id"]
+        storage = client.post(f"/api/v1/projects/{project_id}/storages", json={"name": "data", "root_path": str(old_root)}).json()
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={
+            "name": "data", "version": "v1", "task_kind": "detection", "format": "coco", "annotation_path": str(old_file),
+        }).json()
+        remapped = client.patch(f"/api/v1/projects/{project_id}/storages/{storage['id']}", json={"root_path": str(new_root), "rewrite_references": True})
+        assert remapped.status_code == 200
+        assert remapped.json()["last_validation"]["references"]["rewritten"] >= 1
+        listed = client.get(f"/api/v1/projects/{project_id}/datasets").json()
+        assert listed[0]["id"] == dataset["id"]
+        assert listed[0]["annotation_path"] == str(new_file)
+
+
 def test_evaluation_set_is_persisted_and_must_match_dataset():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

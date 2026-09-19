@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,6 +27,40 @@ class DatasetDeletionConflict(ValueError):
     def __init__(self, message: str, dependencies: list[dict] | None = None):
         super().__init__(message)
         self.dependencies = dependencies or []
+
+
+def rewrite_storage_references(session: Session, project_id: str, old_root: str, new_root: str) -> dict[str, object]:
+    """Move absolute registry references while keeping logical storage IDs stable."""
+    old = Path(old_root).expanduser()
+    new = Path(new_root).expanduser()
+    rewritten: list[dict[str, str]] = []
+
+    def move(owner: str, owner_id: str, field: str, value: str | None) -> str | None:
+        if not value:
+            return value
+        path = Path(value).expanduser()
+        try:
+            relative = path.relative_to(old)
+        except ValueError:
+            return value
+        updated = str(new / relative)
+        if updated != value:
+            rewritten.append({"owner_type": owner, "owner_id": owner_id, "field": field, "from": value, "to": updated})
+        return updated
+
+    for dataset in session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all():
+        for field in ("annotation_path", "manifest_path"):
+            value = move("dataset", dataset.id, field, getattr(dataset, field))
+            setattr(dataset, field, value)
+    for model in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all():
+        for field in ("artifact_path", "config_path"):
+            value = move("model", model.id, field, getattr(model, field))
+            setattr(model, field, value)
+    for artifact in session.scalars(select(Artifact).where(Artifact.project_id == project_id)).all():
+        for field in ("source_path", "managed_path"):
+            value = move("artifact", artifact.id, field, getattr(artifact, field))
+            setattr(artifact, field, value)
+    return {"rewritten": len(rewritten), "references": rewritten}
 
 
 def delete_draft_dataset(session: Session, project_id: str, dataset_id: str) -> dict:
