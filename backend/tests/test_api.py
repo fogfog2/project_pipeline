@@ -312,6 +312,21 @@ def test_schema_registry_includes_recipe_contract():
         assert "steps" in recipe["required"]
 
 
+def test_classification_evaluation_blocks_changed_dataset_source(tmp_path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    manifest = tmp_path / "records.csv"
+    manifest.write_text("image,label\ncat.png,cat\n", encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "classification-drift", "task_kind": "classification"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "images", "version": "v1", "task_kind": "classification", "format": "classification", "manifest_path": str(manifest), "class_names": ["cat"]}).json()
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "classifier", "version": "v1", "family": "fixture", "task_kind": "classification", "format": "external"}).json()
+        manifest.write_text("image,label\ncat.png,dog\n", encoding="utf-8")
+        response = client.post(f"/api/v1/projects/{project_id}/evaluations/classification", json={"model_id": model["id"], "dataset_id": dataset["id"], "records": [{"image_id": "1", "ground_truth": "cat", "prediction": "cat"}]})
+        assert response.status_code == 409
+        assert "source files changed" in response.text
+
+
 def test_result_import_is_idempotent_and_detects_conflict():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

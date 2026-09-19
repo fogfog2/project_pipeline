@@ -891,6 +891,15 @@ def _project_entity(session: Session, entity, identifier: str | None, project_id
     return value
 
 
+def _ensure_dataset_source_current(dataset: DatasetVersion) -> None:
+    """Reject official evaluation when a finalized source changed on disk."""
+    if not dataset.content_hash or not dataset.content_hash.startswith("sha256:"):
+        return
+    current_hash, _ = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
+    if current_hash != dataset.content_hash:
+        raise HTTPException(409, "Dataset source files changed since this version was registered; create a new DatasetVersion")
+
+
 @app.get("/api/v1/projects/{project_id}/quantization-runs")
 def list_quantization_runs(project_id: str, session: Session = Depends(get_session)):
     require_project(session, project_id)
@@ -1311,10 +1320,7 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
         raise HTTPException(422, "Evaluation set must reference the selected DatasetVersion")
     if dataset.format != "coco" or not dataset.annotation_path:
         raise HTTPException(422, "Prediction evaluation currently requires a COCO dataset with annotation_path")
-    if dataset.content_hash and dataset.content_hash.startswith("sha256:"):
-        current_hash, _ = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
-        if current_hash != dataset.content_hash:
-            raise HTTPException(409, "Dataset source files changed since this version was registered; create a new DatasetVersion")
+    _ensure_dataset_source_current(dataset)
     try:
         import json
         from pathlib import Path
@@ -1374,6 +1380,7 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
             unknown = sorted(supplied - known)
             if unknown:
                 raise HTTPException(422, f"Classification labels are not in the Dataset class mapping: {', '.join(unknown)}")
+        _ensure_dataset_source_current(dataset)
     evaluation_set = _project_entity(session, EvaluationSetVersion, payload.evaluation_set_id, project_id, "Evaluation set")
     if evaluation_set and evaluation_set.dataset_id and evaluation_set.dataset_id != payload.dataset_id:
         raise HTTPException(422, "Evaluation set must reference the selected DatasetVersion")
@@ -1423,10 +1430,7 @@ def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, ses
     profile = model.metadata_json.get("onnx_profile")
     if not profile:
         raise HTTPException(422, "Model metadata must include an explicit onnx_profile")
-    if dataset.content_hash and dataset.content_hash.startswith("sha256:"):
-        current_hash, _ = dataset_fingerprint(dataset.manifest_path, dataset.annotation_path)
-        if current_hash != dataset.content_hash:
-            raise HTTPException(409, "Dataset source files changed since this version was registered; create a new DatasetVersion")
+    _ensure_dataset_source_current(dataset)
     try:
         records_path = Path(payload.records_path)
         with records_path.open(encoding="utf-8") as file:
