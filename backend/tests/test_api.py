@@ -721,6 +721,19 @@ def test_release_captures_immutable_evidence_snapshots_and_required_types():
         assert "board:missing-board-id" in missing_ref.json()["gate_result"]["evidence"]["missing_required_refs"]
 
 
+def test_release_critical_class_gate_uses_evaluation_details():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "critical-class-release"}).json()["id"]
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "fixture"}).json()
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "eval", "version": "v1"}).json()
+        run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "candidate eval", "dataset_id": dataset["id"], "model_id": model["id"], "config": {"evaluator_version": "eval-v1"}, "metrics": {"bbox_AP50": 0.7}, "details": {"per_class": {"person": {"ap50": 0.8}}}}).json()
+        release = client.post(f"/api/v1/projects/{project_id}/releases", json={"name": "critical-release", "model_id": model["id"], "evaluation_run_id": run["id"], "gate_config": {"minimum": {"bbox_AP50": 0.5}, "critical_classes": {"person": {"ap50": 0.8}}}})
+        assert release.status_code == 201
+        assert release.json()["decision"] == "PASS"
+
+
 def test_empty_project_and_references_are_explicit_and_reversible():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

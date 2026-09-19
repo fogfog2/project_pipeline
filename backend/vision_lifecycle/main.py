@@ -1700,7 +1700,7 @@ def create_release(project_id: str, payload: ReleaseCreate, session: Session = D
                 baseline_compatibility = {"status": "compatible", "run_id": candidate.id}
                 break
     try:
-        result = evaluate_gate(evaluation.metrics if evaluation else None, baseline_metrics, payload.gate_config)
+        result = evaluate_gate(evaluation.metrics if evaluation else None, baseline_metrics, payload.gate_config, candidate_details=evaluation.details if evaluation else None)
     except GateConfigError as error:
         raise HTTPException(422, str(error)) from error
     if payload.baseline_model_id and baseline_compatibility["status"] != "compatible" and payload.gate_config.get("max_regression"):

@@ -28,3 +28,13 @@ def test_gate_rejects_unknown_rules_and_empty_rules():
         evaluate_gate({"accuracy": 1}, None, {"unsupported": {"accuracy": 1}})
     with pytest.raises(GateConfigError):
         evaluate_gate({"accuracy": 1}, None, {"minimum": {}})
+
+
+def test_gate_requires_critical_class_metrics_and_checks_thresholds():
+    config = {"critical_classes": {"person": {"ap50": 0.8, "recall": {"minimum": 0.7, "maximum": 1.0}}}}
+    missing = evaluate_gate({"bbox_AP50": 0.9}, None, config, candidate_details={"per_class": {}})
+    assert missing["status"] == "INCOMPLETE"
+    failed = evaluate_gate({"bbox_AP50": 0.9}, None, config, candidate_details={"per_class": {"person": {"ap50": 0.75, "recall": 0.8}}})
+    assert failed["status"] == "FAIL"
+    passed = evaluate_gate({"bbox_AP50": 0.9}, None, config, candidate_details={"per_class": {"person": {"ap50": 0.85, "recall": 0.8}}})
+    assert passed["status"] == "PASS"
