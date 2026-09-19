@@ -42,6 +42,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 실제 Storage/Dataset/Model/Run/Release 근거가 없으면 onboarding 완료 처리를 거부
 - 대용량 Storage inventory를 별도 Job으로 실행하고 로그·취소·재시도 흐름으로 관리
 - classification prediction records 평가 UI와 detection COCO 평가 UI
+- 평가 화면에서 즉시 실행과 외부 worker queue 등록을 선택하고 Job ID·로그 화면으로 이어지는 작업 흐름
 - 검출 평가에서 invalid bbox/image/class/score를 성공 지표와 분리하고 최대 50건의 오류 이유를 보존
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - Release 생성 시 evaluation/board/quantization/artifact evidence를 snapshot·content hash로 고정하고 필수 evidence 누락을 INCOMPLETE으로 표시
