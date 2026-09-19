@@ -440,6 +440,9 @@ def safe_export(session: Session, project_id: str) -> dict:
     if not project:
         raise LookupError("Project not found")
 
+    def looks_absolute_path(value: str) -> bool:
+        return value.startswith(("/", "\\\\")) or (len(value) >= 3 and value[1] == ":" and value[2] in {"/", "\\"})
+
     def scrub(value):
         if isinstance(value, dict):
             cleaned = {}
@@ -451,7 +454,7 @@ def safe_export(session: Session, project_id: str) -> dict:
             return cleaned
         if isinstance(value, list):
             return [scrub(nested) for nested in value]
-        if isinstance(value, str) and value.startswith("/"):
+        if isinstance(value, str) and looks_absolute_path(value):
             return "[redacted-absolute-path]"
         return value
 
@@ -488,7 +491,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         elif isinstance(value, list):
             for index, nested in enumerate(value):
                 assert_pages_safe(nested, f"{location}[{index}]")
-        elif isinstance(value, str) and value.startswith("/"):
+        elif isinstance(value, str) and looks_absolute_path(value):
             raise ValueError(f"Pages export contains an absolute path at {location}")
 
     summary = overview(session, project_id)
