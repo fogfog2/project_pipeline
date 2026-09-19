@@ -88,7 +88,14 @@ def test_cli_label_schema_create_and_diff_share_contract(tmp_path: Path, monkeyp
     first.write_text('{"name":"labels","version":"v1","classes":[{"id":1,"name":"person"}],"mapping":{"person":1}}', encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["visionops", "create-label-schema", project_id, str(first)])
     cli.main()
-    base_id = json.loads(capsys.readouterr().out)["id"]
+    cli_result = json.loads(capsys.readouterr().out)
+    base_id = cli_result["id"]
+    from fastapi.testclient import TestClient
+    from vision_lifecycle.main import app
+    with TestClient(app) as client:
+        response = client.post(f"/api/v1/projects/{project_id}/label-schemas", json=json.loads(first.read_text()))
+        assert response.status_code == 201
+        assert response.json()["content_hash"] == cli_result["content_hash"]
     second = tmp_path / "labels-v2.json"
     second.write_text(f'{{"name":"labels","version":"v2","parent_label_schema_id":"{base_id}","classes":[{{"id":1,"name":"pedestrian"}},{{"id":2,"name":"bike"}}],"mapping":{{"pedestrian":1,"bike":2}}}}', encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["visionops", "create-label-schema", project_id, str(second)])
