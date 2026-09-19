@@ -448,7 +448,20 @@ def safe_export(session: Session, project_id: str) -> dict:
         for nested_key in ("details", "snapshot", "before_json", "after_json"):
             if isinstance(data.get(nested_key), (dict, list)):
                 data[nested_key] = scrub(data[nested_key])
-        return data
+        return scrub(data)
+
+    def assert_pages_safe(value, location: str = "snapshot") -> None:
+        forbidden = ("path", "command", "environment", "secret", "token", "password", "credential")
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if any(token in str(key).lower() for token in forbidden):
+                    raise ValueError(f"Pages export contains a forbidden field at {location}.{key}")
+                assert_pages_safe(nested, f"{location}.{key}")
+        elif isinstance(value, list):
+            for index, nested in enumerate(value):
+                assert_pages_safe(nested, f"{location}[{index}]")
+        elif isinstance(value, str) and value.startswith("/"):
+            raise ValueError(f"Pages export contains an absolute path at {location}")
 
     summary = overview(session, project_id)
     overview_export = {
@@ -460,7 +473,7 @@ def safe_export(session: Session, project_id: str) -> dict:
         "recent_runs": [safe(item) for item in summary["recent_runs"]],
         "next_actions": summary["next_actions"],
     }
-    return {
+    snapshot = {
         "schema_version": "1.1", "generated_at": datetime.now(UTC).isoformat(), "project": safe(project), "overview": overview_export,
         "datasets": [safe(x) for x in session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()],
         "models": [safe(x) for x in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()],
@@ -480,8 +493,10 @@ def safe_export(session: Session, project_id: str) -> dict:
         "releases": [safe(x) for x in session.scalars(select(Release).where(Release.project_id == project_id)).all()],
         "release_evidence": [safe(x) for x in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id)).all()],
         "audit_events": [safe(x) for x in session.scalars(select(AuditEvent).where(AuditEvent.project_id == project_id).order_by(AuditEvent.created_at.desc())).all()],
-        "redactions": ["storage_root", "root_path", "source_path", "managed_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "raw_output_path", "command", "environment_names", "working_directory"],
+        "redactions": ["storage_root", "root_path", "source_path", "managed_path", "artifact_path", "config_path", "annotation_path", "manifest_path", "raw_output_path", "command", "environment", "environment_names", "working_directory"],
     }
+    assert_pages_safe(snapshot)
+    return snapshot
 
 
 def seed_demo(session: Session) -> Project:
