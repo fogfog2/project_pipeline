@@ -106,9 +106,9 @@ def list_contract_schemas():
 @app.get("/api/v1/recipes")
 def list_recipes():
     return [
-        {"id": "blank", "name": "내 프로젝트 연결", "task_kind": "unknown", "steps": ["project", "data", "model", "evaluation", "report"]},
-        {"id": "mmdetection-onboarding", "name": "MMDetection RTMDet·YOLOX 실습", "task_kind": "detection", "steps": ["project", "data", "rtmdet", "evaluation", "yolox", "comparison"]},
-        {"id": "classification-onboarding", "name": "분류 모델 실습", "task_kind": "classification", "steps": ["project", "data", "model", "evaluation", "comparison"]},
+        {"id": "blank", "name": "내 프로젝트 연결", "task_kind": "unknown", "steps": _RECIPE_STEPS["blank"]},
+        {"id": "mmdetection-onboarding", "name": "MMDetection RTMDet·YOLOX 실습", "task_kind": "detection", "steps": _RECIPE_STEPS["mmdetection-onboarding"]},
+        {"id": "classification-onboarding", "name": "분류 모델 실습", "task_kind": "classification", "steps": _RECIPE_STEPS["classification-onboarding"]},
     ]
 
 

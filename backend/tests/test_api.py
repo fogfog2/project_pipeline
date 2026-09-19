@@ -322,6 +322,16 @@ def test_schema_registry_includes_recipe_contract():
         assert "steps" in recipe["required"]
 
 
+def test_recipe_list_matches_onboarding_step_engine():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        recipes = {item["id"]: item["steps"] for item in client.get("/api/v1/recipes").json()}
+        created = client.post("/api/v1/projects", json={"name": "recipe-step-match", "recipe_id": "mmdetection-onboarding"}).json()
+        session = client.post(f"/api/v1/projects/{created['id']}/onboarding", json={"recipe_id": "mmdetection-onboarding"}).json()
+        assert recipes["mmdetection-onboarding"] == [item["step_id"] for item in session["steps"]]
+
+
 def test_classification_evaluation_blocks_changed_dataset_source(tmp_path):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
