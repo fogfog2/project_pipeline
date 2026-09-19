@@ -439,6 +439,26 @@ def test_result_import_is_idempotent_and_detects_conflict():
         assert "measurement_path" not in exported_run["details"]
 
 
+def test_prediction_evaluation_can_run_as_external_worker_job(monkeypatch):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    monkeypatch.setenv("VISION_LIFECYCLE_EXTERNAL_WORKER", "true")
+    from vision_lifecycle.runner import worker_once
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects/demo").json()["id"]
+        dataset = client.get(f"/api/v1/projects/{project_id}/datasets").json()[0]
+        model = next(item for item in client.get(f"/api/v1/projects/{project_id}/models").json() if item["family"] == "RTMDet-tiny")
+        queued = client.post(f"/api/v1/projects/{project_id}/evaluations/predictions/jobs", json={
+            "model_id": model["id"], "dataset_id": dataset["id"], "predictions_path": "examples/mmdetection/predictions/rtmdet-tiny.json",
+        })
+        assert queued.status_code == 201
+        assert queued.json()["status"] == "queued"
+        assert worker_once("evaluation-worker") is True
+        job = client.get(f"/api/v1/projects/{project_id}/jobs").json()[0]
+        assert job["status"] == "completed"
+        assert job["result_json"]["run_id"]
+
+
 def test_result_manifest_can_link_quantization_and_calibration_lineage():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

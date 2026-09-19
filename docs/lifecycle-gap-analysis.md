@@ -2,7 +2,7 @@
 
 > 후속 UI 점검과 빈 프로젝트 기반 실습 요구사항은 [실습형 Lifecycle 통합 계획](guided-lifecycle-plan.md)에 통합했다. 본 문서는 코드 감사 근거와 A–G 기술 작업 분류로 유지하며, 최신 사용자 흐름과 구현 순서는 통합 계획을 따른다.
 
-최신 보수: 프로젝트/Git/기준 브랜치 설정 편집, 버전 있는 recipe 계약과 recipe 조회 API, POSIX runner process-group 취소, cursor 기반 Job 로그 API와 WebSocket 스트림, overview의 저장된 근거별 readiness와 모델 provenance 누락 표시, Alembic baseline 및 `visionops migrate`, 다중 worker의 원자적 queue claim·lease owner·만료 시각·시도 횟수·만료 lease 재큐잉·실행 중 heartbeat 갱신과 작업 표 표시, API·CLI가 공유하는 외부 결과 manifest import service가 추가됐다. 아래 표의 항목은 여전히 전체 사용자 시나리오 기준의 남은 범위를 나타낸다.
+최신 보수: 프로젝트/Git/기준 브랜치 설정 편집, 버전 있는 recipe 계약과 recipe 조회 API, POSIX runner process-group 취소, cursor 기반 Job 로그 API와 WebSocket 스트림, overview의 저장된 근거별 readiness와 모델 provenance 누락 표시, Alembic baseline 및 `visionops migrate`, 다중 worker의 원자적 queue claim·lease owner·만료 시각·시도 횟수·만료 lease 재큐잉·실행 중 heartbeat 갱신과 작업 표 표시, API·CLI가 공유하는 외부 결과 manifest import service, COCO prediction 평가의 외부 worker Job 경로가 추가됐다. 아래 표의 항목은 여전히 전체 사용자 시나리오 기준의 남은 범위를 나타낸다.
 
 점검 기준: `586b534` 커밋의 소스와 테스트. 기준 문서: `../On-device_Vision_AI_Lifecycle_Management_Plan.md` 전체 22개 절 및 사용자 후속 요구사항.
 
@@ -50,7 +50,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S09 | §11: 독립 calibration 버전·통계 | 부분 구현 | CalibrationSetVersion에 sample 수·중복·Dataset item·strategy/seed·전처리 선언 validation/statistics를 저장하고 재검사 API/UI를 제공한다. 연결된 COCO 이미지의 bounded decoded sample에 대해 실제 파일 누락·decode 오류·해상도·채널·pixel 평균/표준편차를 `/inspect` API와 UI로 기록한다. 전처리를 적용한 tensor 통계와 대규모 sampling job은 남아 있다 |
 | S10 | §11: 양자화 matrix·encoding·QuantSim lineage | 부분 구현 | source/output model, calibration, encoding과 명시적 source/output role을 저장하고 matrix UI의 기본 입력을 제공한다. encoding 파일은 별도 artifact로 hash/managed copy를 보존하고 UI에서 재검증할 수 있다. method별 matrix와 encoding 내용 schema 검증은 남아 있다 |
 | S11 | §11: Quantization Loss·Target Gap 계산 | 부분 구현 | baseline·QuantSim·target 평가의 dataset/evaluator/protocol/scope/class mapping 계약을 검사해 Quantization Loss·Target Gap을 Run으로 저장한다. 다중 metric/critical class와 target 측정 범위 검증은 남아 있다 |
-| S12 | §12: 분류·검출 공통 평가 | 부분 구현 | 외부 prediction 기반 분류, AP50, pycocotools bbox 평가와 invalid image/class/bbox/score 검사, 명시적 ONNX image record batch 평가가 존재한다. 대규모 평가를 독립 worker job으로 실행하는 흐름과 고급 전처리/후처리 profile은 남아 있다 |
+| S12 | §12: 분류·검출 공통 평가 | 부분 구현 | 외부 prediction 기반 분류, AP50, pycocotools bbox 평가와 invalid image/class/bbox/score 검사, 명시적 ONNX image record batch 평가가 존재한다. COCO prediction 평가는 동기 API와 동일 계약의 외부 worker Job/API 경로를 제공한다. ONNX batch·분류 평가의 worker 연결과 고급 전처리/후처리 profile은 남아 있다 |
 | S13 | §12: per-class/confusion/error/slice 보고서 | 부분 구현 | 분류 confusion/per-class와 COCO per-class/invalid 결과를 Run.details에 저장하고 재조회 가능하며, classification record의 명시적 confidence에 대해 ECE/bin과 `slice`/`slices`별 지표를 계산한다. micro 지표, 고정 Top-K 규약, detection slice·오류 파일·시각화 artifact는 남아 있다 |
 | S14 | §12,17: baseline/candidate 공식 비교 | 부분 구현·정확성 보완 필요 | 완료된 평가 중 동일 dataset·전체 평가 config·evaluator·class mapping 계약을 만족하는 최신 pair를 선택하고 latency 계약을 별도 검사한다. 다중 세트·slice·전체 설정 hash/승인 이력은 남아 있다. `service.py:compare_models` |
 | S15 | §13: target profile·외부 보드 결과 | 부분 구현 | target 행 등록·board import 연결과 metric 유한값/`source`·`scope`·batch·warmup·iterations·units 측정 계약 검증을 제공한다. TargetProfile에 hardware와 firmware/accelerator/runtime metadata를 별도 JSON으로 보존하고 UI에서 입력·조회한다. 보드 raw output 파일도 artifact로 hash/managed copy를 보존하고 재검증한다. board 결과에서 공통 평가 연결은 남아 있다 |

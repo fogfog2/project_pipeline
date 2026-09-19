@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from .database import SessionLocal
+from .evaluation_service import evaluate_coco_prediction_file
 from sqlalchemy import select, update
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -158,6 +159,34 @@ def _run_inventory(job_id: str) -> None:
         _append_log(job_id, f"Storage inventory failed: {error}\n", status="failed")
 
 
+def _run_prediction_evaluation(job_id: str) -> None:
+    _append_log(job_id, "COCO prediction evaluation started.\n", status="running")
+    with SessionLocal() as session:
+        job = session.get(Job, job_id)
+        payload = dict(job.input_json or {}) if job else {}
+        project_id = job.project_id if job else None
+    if not project_id:
+        _append_log(job_id, "Evaluation job project was not found.\n", status="failed")
+        return
+    try:
+        with SessionLocal() as session:
+            result = evaluate_coco_prediction_file(
+                session,
+                project_id,
+                dataset_id=str(payload["dataset_id"]),
+                model_id=str(payload["model_id"]),
+                predictions_path=str(payload["predictions_path"]),
+                protocol=str(payload.get("protocol", "onboarding_ap50")),
+                iou_threshold=float(payload.get("iou_threshold", 0.5)),
+                evaluator_version=str(payload.get("evaluator_version", "lifecycle-ap50-v1")),
+                evaluation_set_id=payload.get("evaluation_set_id"),
+            )
+        run = result.get("run", {})
+        _append_log(job_id, "COCO prediction evaluation completed.\n", status="completed", result={"run_id": run.get("id"), "metrics": result.get("result", {})})
+    except (KeyError, OSError, RuntimeError, ValueError, TypeError) as error:
+        _append_log(job_id, f"COCO prediction evaluation failed: {error}\n", status="failed")
+
+
 def _run_profile(job_id: str, profile_id: str, args: list[str]) -> None:
     with SessionLocal() as session:
         profile = session.get(RunnerProfile, profile_id)
@@ -226,6 +255,8 @@ def run_job(job_id: str, runner_id: str, args: list[str]) -> None:
         _run_mock_board(job_id)
     elif runner_id == "builtin:storage-inventory":
         _run_inventory(job_id)
+    elif runner_id == "builtin:evaluate-coco-predictions":
+        _run_prediction_evaluation(job_id)
     else:
         _run_profile(job_id, runner_id, args)
 

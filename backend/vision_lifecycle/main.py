@@ -19,6 +19,7 @@ from .adapters.coco import load_coco, validate_coco
 from .adapters.inspect import inspect_path
 from .adapters.registry import list_adapters
 from .evaluators.detection import evaluate_coco_full, evaluate_coco_predictions
+from .evaluation_service import DatasetSourceChangedError, evaluate_coco_prediction_file
 from .evaluators.classification import evaluate_classification
 from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
@@ -1270,6 +1271,18 @@ def import_result(project_id: str, payload: ResultImportCreate, session: Session
 @app.post("/api/v1/projects/{project_id}/evaluations/predictions", status_code=201)
 def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, session: Session = Depends(get_session)):
     require_project(session, project_id)
+    try:
+        return evaluate_coco_prediction_file(session, project_id, dataset_id=payload.dataset_id, model_id=payload.model_id, predictions_path=payload.predictions_path, protocol=payload.protocol, iou_threshold=payload.iou_threshold, evaluator_version=payload.evaluator_version, evaluation_set_id=payload.evaluation_set_id)
+    except DatasetSourceChangedError as error:
+        raise HTTPException(409, str(error)) from error
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@app.post("/api/v1/projects/{project_id}/evaluations/predictions/jobs", status_code=201)
+def queue_prediction_evaluation(project_id: str, payload: PredictionEvaluationCreate, session: Session = Depends(get_session)):
+    """Queue the same COCO evaluation contract for an external or local worker."""
+    require_project(session, project_id)
     dataset = session.get(DatasetVersion, payload.dataset_id)
     model = session.get(ModelVersion, payload.model_id)
     if not dataset or dataset.project_id != project_id or not model or model.project_id != project_id:
@@ -1280,47 +1293,14 @@ def evaluate_predictions(project_id: str, payload: PredictionEvaluationCreate, s
     if dataset.format != "coco" or not dataset.annotation_path:
         raise HTTPException(422, "Prediction evaluation currently requires a COCO dataset with annotation_path")
     _ensure_dataset_source_current(dataset)
-    try:
-        import json
-        from pathlib import Path
-        with Path(payload.predictions_path).open(encoding="utf-8") as file:
-            predictions = json.load(file)
-        if not isinstance(predictions, list):
-            raise ValueError("Prediction JSON must be a list")
-        evaluation_image_ids = _evaluation_image_ids(evaluation_set)
-        if payload.protocol == "onboarding_ap50":
-            result = evaluate_coco_predictions(dataset.annotation_path, predictions, payload.iou_threshold, image_ids=evaluation_image_ids)
-        elif payload.protocol == "coco_full":
-            result = evaluate_coco_full(dataset.annotation_path, predictions, image_ids=evaluation_image_ids)
-        else:
-            raise ValueError("protocol must be onboarding_ap50 or coco_full")
-    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
-        raise HTTPException(422, str(error)) from error
-    metric_scope = result.get("metric_scope", "")
-    details = {key: value for key, value in result.items() if key != "metric_scope"}
-    if evaluation_set:
-        details["evaluation_set_filter"] = {
-            "evaluation_set_id": evaluation_set.id,
-            "selected_image_count": len(evaluation_image_ids) if evaluation_image_ids is not None else "all",
-        }
-    metrics = {key: value for key, value in details.items() if isinstance(value, (int, float))}
-    run = Run(
-        project_id=project_id, kind="evaluation", name=f"{model.family} prediction import", status="completed",
-        dataset_id=dataset.id, model_id=model.id,
-        config={"evaluator_version": "coco-full-v1" if payload.protocol == "coco_full" and payload.evaluator_version == "lifecycle-ap50-v1" else payload.evaluator_version, "protocol": payload.protocol, "iou_threshold": payload.iou_threshold, "scope": metric_scope, **({"evaluation_set_id": evaluation_set.id} if evaluation_set else {})},
-        metrics=metrics, details=details,
-        environment={"source": "external-prediction-json"}, notes="Per-class output retained in evaluation import result.",
-    )
-    session.add(run); session.flush()
-    prediction_artifact = register_artifact(
-        session, project_id, kind="prediction", logical_name=f"{model.name}/{model.version}/{dataset.name}/{dataset.version}/predictions",
-        owner_type="run", owner_id=run.id, source_path=payload.predictions_path, notes=f"{payload.protocol} evaluation input",
-    )
-    details["prediction_artifact_id"] = prediction_artifact.id
-    run.details = details
-    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
-    session.commit(); session.refresh(run)
-    return {"run": as_dict(run), "result": {"metric_scope": metric_scope, **details}}
+    input_json = {**payload.model_dump(), "project_id": project_id, "_runner_args": []}
+    job = Job(project_id=project_id, runner_id="builtin:evaluate-coco-predictions", command=["builtin:evaluate-coco-predictions"], input_json=input_json, status="queued")
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    if os.environ.get("VISION_LIFECYCLE_EXTERNAL_WORKER", "false").lower() != "true":
+        launch(job, [])
+    return as_dict(job)
 
 
 @app.post("/api/v1/projects/{project_id}/evaluations/classification", status_code=201)
