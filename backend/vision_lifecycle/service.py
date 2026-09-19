@@ -387,8 +387,16 @@ def lineage(session: Session, project_id: str) -> dict:
     nodes += [{"id": item.id, "kind": "artifact", "label": item.logical_name, "status": item.status} for item in artifacts]
     nodes += [{"id": item.id, "kind": "field-batch", "label": item.name, "status": item.status} for item in field_batches]
     edges = []
+    for entity, kind, relation in ((SplitVersion, "split", "defines_split"), (EvaluationSetVersion, "evaluation-set", "defines_evaluation"), (CalibrationSetVersion, "calibration-set", "defines_calibration")):
+        for item in session.scalars(select(entity).where(entity.project_id == project_id)).all():
+            nodes.append({"id": item.id, "kind": kind, "label": f"{item.name} {item.version}", "status": item.status})
+            edges.append({"source": project.id, "target": item.id, "relation": "contains"})
+            if item.dataset_id:
+                edges.append({"source": item.dataset_id, "target": item.id, "relation": relation})
     for dataset in datasets:
         edges.append({"source": project.id, "target": dataset.id, "relation": "contains"})
+        if dataset.parent_dataset_id:
+            edges.append({"source": dataset.parent_dataset_id, "target": dataset.id, "relation": "supersedes"})
     for label_schema in label_schemas:
         edges.append({"source": project.id, "target": label_schema.id, "relation": "contains"})
         if label_schema.dataset_id:
@@ -406,10 +414,14 @@ def lineage(session: Session, project_id: str) -> dict:
             edges.append({"source": run.model_id, "target": run.id, "relation": run.kind})
         if run.dataset_id:
             edges.append({"source": run.dataset_id, "target": run.id, "relation": "evaluated_on"})
-        for key, relation in (("quantization_run_id", "result_of"), ("calibration_set_id", "uses_calibration"), ("board_benchmark_id", "summarizes")):
+        for key, relation in (("evaluation_set_id", "uses_evaluation_set"), ("quantization_run_id", "result_of"), ("calibration_set_id", "uses_calibration"), ("board_benchmark_id", "summarizes")):
             reference_id = (run.config or {}).get(key)
             if reference_id:
                 edges.append({"source": reference_id, "target": run.id, "relation": relation})
+        training = (run.details or {}).get("training") or {}
+        for key, relation in (("split_id", "uses_split"), ("label_schema_id", "uses_labels")):
+            if training.get(key):
+                edges.append({"source": training[key], "target": run.id, "relation": relation})
     for quant in quants:
         edges.append({"source": quant.source_model_id, "target": quant.id, "relation": "quantized"})
         if quant.output_model_id:

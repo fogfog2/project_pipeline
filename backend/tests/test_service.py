@@ -4,6 +4,29 @@ from vision_lifecycle.models import DatasetVersion, ModelVersion, Project, Run
 from vision_lifecycle.evaluators.detection import evaluate_coco_predictions
 
 
+def test_lineage_resolves_data_contract_nodes_and_training_edges():
+    from vision_lifecycle.models import SplitVersion, EvaluationSetVersion, CalibrationSetVersion, LabelSchemaVersion
+    from vision_lifecycle.service import lineage
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with SessionLocal() as session:
+        project = Project(name="contract-graph")
+        session.add(project); session.flush()
+        dataset = DatasetVersion(project_id=project.id, name="data", version="v1", task_kind="detection", format="coco")
+        session.add(dataset); session.flush()
+        contracts = [entity(project_id=project.id, dataset_id=dataset.id, name="contract", version="v1") for entity in (SplitVersion, EvaluationSetVersion, CalibrationSetVersion, LabelSchemaVersion)]
+        session.add_all(contracts); session.flush()
+        split, evaluation, calibration, labels = contracts
+        run = Run(project_id=project.id, kind="training", name="train", details={"training": {"split_id": split.id, "label_schema_id": labels.id}})
+        session.add(run)
+        session.add(Run(project_id=project.id, kind="evaluation", name="eval", config={"evaluation_set_id": evaluation.id, "calibration_set_id": calibration.id}))
+        session.commit()
+        graph = lineage(session, project.id)
+        ids = {node["id"] for node in graph["nodes"]}
+        assert all(edge["source"] in ids and edge["target"] in ids for edge in graph["edges"])
+        assert {"uses_split", "uses_labels", "uses_evaluation_set", "uses_calibration"} <= {edge["relation"] for edge in graph["edges"]}
+
+
 def test_report_keeps_whole_dataset_evaluations_separate():
     from vision_lifecycle.service import evaluation_set_report, safe_export
     Base.metadata.drop_all(engine)
