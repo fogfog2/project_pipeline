@@ -1,5 +1,7 @@
 # Vision Lifecycle
 
+`main` push와 Pull Request에는 GitHub Actions가 백엔드 pytest와 프런트엔드 production build를 자동 실행합니다.
+
 Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이터, 학습 결과, 모델 bundle, ONNX export, 양자화, 평가, 보드 benchmark를 하나의 lineage로 연결하는 로컬 관리 시스템이다. 새 프로젝트와 실습 프로젝트는 모두 빈 상태에서 시작한다.
 
 첫 온보딩 예제는 MMDetection 3.3.0 계열의 **RTMDet-tiny**와 **YOLOX-s**다. 두 모델을 동일 COCO evaluation set에서 baseline/candidate로 비교하는 흐름을 제공한다.
