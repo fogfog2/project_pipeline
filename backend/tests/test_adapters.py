@@ -72,3 +72,22 @@ def test_jsonl_dataset_preview_returns_bounded_records(tmp_path: Path):
         assert preview.status_code == 200
         assert preview.json()["records"] == [{"id": "one", "path": "one.jpg"}]
         assert preview.json()["truncated"] is True
+
+
+def test_classification_snapshot_preview_returns_records(tmp_path: Path):
+    from PIL import Image
+    from fastapi.testclient import TestClient
+    from vision_lifecycle.database import Base, engine
+    from vision_lifecycle.main import app
+
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    folder = tmp_path / "classes"
+    (folder / "cat").mkdir(parents=True)
+    Image.new("RGB", (2, 2), (1, 2, 3)).save(folder / "cat" / "one.png")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "classification-preview"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "images", "version": "v1", "task_kind": "classification", "format": "classification-folder", "manifest_path": str(folder)}).json()
+        preview = client.get(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/preview")
+        assert preview.status_code == 200
+        assert preview.json()["records"][0]["label"] == "cat"

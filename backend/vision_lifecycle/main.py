@@ -448,6 +448,14 @@ def preview_dataset(project_id: str, dataset_id: str, limit: int = 12, session: 
         except (OSError, ValueError, json.JSONDecodeError) as error:
             raise HTTPException(422, str(error)) from error
         return {"dataset_id": dataset.id, "format": "jsonl", "records": records, "truncated": total > len(records)}
+    if dataset.format.lower() in {"yolo", "yolo-txt", "classification", "classification-folder", "classification-csv", "csv"}:
+        images = list((dataset.snapshot or {}).get("images", []))
+        annotations = list((dataset.snapshot or {}).get("annotations", []))
+        by_image: dict[str, list[dict]] = {}
+        for annotation in annotations:
+            by_image.setdefault(str(annotation.get("image_id", "")), []).append(annotation)
+        records = [{**image, "annotations": by_image.get(str(image.get("id", "")), [])} for image in images[:limit]]
+        return {"dataset_id": dataset.id, "format": dataset.format, "records": records, "class_names": (dataset.snapshot or {}).get("class_names", []), "truncated": len(images) > limit}
     if dataset.format != "coco" or not dataset.annotation_path:
         raise HTTPException(422, "Preview currently requires a COCO annotation path or JSONL manifest path")
     try:
