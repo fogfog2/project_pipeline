@@ -44,6 +44,25 @@ def test_checked_in_onnx_fixtures_are_executable():
     assert detection["predictions"][0]["label"] == 0
 
 
+def test_detection_profile_applies_threshold_and_class_mapping():
+    mapped = infer("examples/fixtures/detection_constant.onnx", "examples/fixtures/images/detection.jpg", {
+        "task_kind": "detection", "input_name": "images", "input_size": [2, 2],
+        "outputs": {"boxes": "boxes", "scores": "scores", "labels": "labels"},
+        "score_threshold": 0.5, "class_mapping": {"0": 7}, "bbox_format": "xywh",
+    })
+    assert mapped["predictions"][0]["label"] == 7
+    filtered = infer("examples/fixtures/detection_constant.onnx", "examples/fixtures/images/detection.jpg", {
+        "task_kind": "detection", "input_name": "images", "input_size": [2, 2],
+        "outputs": {"boxes": "boxes", "scores": "scores", "labels": "labels"}, "score_threshold": 1.0,
+    })
+    assert filtered["predictions"] == []
+
+
+def test_profile_rejects_invalid_postprocess_contract():
+    with pytest.raises(ValueError, match="resize_mode"):
+        OnnxProfile.from_dict({"task_kind": "detection", "input_name": "images", "input_size": [2, 2], "resize_mode": "crop"})
+
+
 def test_classification_inference_profile(tmp_path: Path):
     onnx = pytest.importorskip("onnx")
     from PIL import Image

@@ -15,6 +15,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - YOLO TXT 디렉터리와 classification folder/CSV도 image·label·annotation snapshot과 content hash로 등록
 - SplitVersion 검증에서 item 중복·알 수 없는 item·group 누수를 검사하고 `require_complete` 분할 미할당을 표시
 - COCO annotation validation과 external prediction JSON의 onboarding AP50 또는 공식 COCO AP@[.50:.95] 평가
+- ONNX profile에 resize(`stretch`/`letterbox`), score threshold, NMS IoU, bbox 좌표계(`xywh`/`xyxy`), class mapping을 명시하고 실제 preview에 적용
 - 분류 prediction record 기반 Top-1/Top-K·macro F1·confusion matrix 평가
 - 분류 평가의 class mapping·빈 label·중복 image·top-k 입력 검증
 - EvaluationSetVersion을 평가 Run에 연결하고 Dataset 불일치 평가를 차단
