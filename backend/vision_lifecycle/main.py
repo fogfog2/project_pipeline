@@ -32,6 +32,7 @@ from .inference.onnx import OnnxProfile, diagnose as diagnose_onnx, infer as inf
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
 from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, FieldDataBatch, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
+from .label_validation import validate_label_schema
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, MmdetectionPreflightRequest, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseApprovalCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
@@ -875,6 +876,9 @@ def list_label_schemas(project_id: str, session: Session = Depends(get_session))
 def create_label_schema(project_id: str, payload: VersionDefinitionCreate, session: Session = Depends(get_session)):
     require_project(session, project_id)
     _version_dataset(session, project_id, payload.dataset_id)
+    label_errors = validate_label_schema(payload.classes, payload.mapping)
+    if label_errors:
+        raise HTTPException(422, {"message": "Invalid label schema", "errors": label_errors})
     parent = None
     if payload.parent_label_schema_id:
         parent = session.get(LabelSchemaVersion, payload.parent_label_schema_id)

@@ -689,6 +689,25 @@ def test_label_schema_parent_history_and_lineage_are_preserved():
         assert any(edge["relation"] == "supersedes" and edge["source"] == base["id"] and edge["target"] == child.json()["id"] for edge in graph["edges"])
 
 
+def test_label_schema_rejects_duplicate_classes_and_unknown_mapping_targets():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "label-contract"}).json()["id"]
+        duplicate = client.post(f"/api/v1/projects/{project_id}/label-schemas", json={
+            "name": "labels", "version": "v1",
+            "classes": [{"id": 1, "name": "person"}, {"id": 1, "name": "person-copy"}],
+        })
+        assert duplicate.status_code == 422
+        assert "duplicate class id" in str(duplicate.json()["detail"])
+        unknown_target = client.post(f"/api/v1/projects/{project_id}/label-schemas", json={
+            "name": "labels", "version": "v2",
+            "classes": [{"id": 1, "name": "person"}], "mapping": {"person": 7},
+        })
+        assert unknown_target.status_code == 422
+        assert "not declared in classes" in str(unknown_target.json()["detail"])
+
+
 def test_release_requires_compatible_baseline_for_regression_gate():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
