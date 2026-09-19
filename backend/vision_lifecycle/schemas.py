@@ -318,6 +318,11 @@ class ReleaseCreate(BaseModel):
     evidence: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ReleaseApprovalCreate(BaseModel):
+    approver: str = Field(min_length=1, max_length=120)
+    reason: str = ""
+
+
 class InferencePreviewRequest(BaseModel):
     model_id: str
     image_path: str

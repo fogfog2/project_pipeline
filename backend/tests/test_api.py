@@ -715,6 +715,11 @@ def test_release_captures_immutable_evidence_snapshots_and_required_types():
             "gate_config": {"minimum": {"bbox_AP50": 0.5}}, "evidence": [{"type": "evaluation", "id": run["id"], "required": True}],
         })
         assert release.status_code == 201 and release.json()["decision"] == "PASS"
+        approved = client.post(f"/api/v1/projects/{project_id}/releases/{release.json()['id']}/approve", json={"approver": "reviewer-1", "reason": "metric and evidence reviewed"})
+        assert approved.status_code == 200
+        assert approved.json()["gate_result"]["approval"]["approver"] == "reviewer-1"
+        duplicate = client.post(f"/api/v1/projects/{project_id}/releases/{release.json()['id']}/approve", json={"approver": "reviewer-2"})
+        assert duplicate.status_code == 409
         evidence = client.get(f"/api/v1/projects/{project_id}/releases/{release.json()['id']}/evidence")
         assert evidence.status_code == 200 and evidence.json()[0]["snapshot"]["entity"]["metrics"]["bbox_AP50"] == 0.7
         from vision_lifecycle.database import SessionLocal

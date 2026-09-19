@@ -34,7 +34,7 @@ from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mm
 from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, FieldDataBatch, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
-from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, MmdetectionPreflightRequest, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
+from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, MmdetectionPreflightRequest, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseApprovalCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from . import schemas as contract_schemas
 from .serializers import as_dict
 from .service import DatasetDeletionConflict, ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, delete_draft_dataset, import_result_manifest, lineage, overview, rewrite_storage_references, safe_export, seed_demo
@@ -1906,6 +1906,24 @@ def list_release_evidence(project_id: str, release_id: str, session: Session = D
     if not release or release.project_id != project_id:
         raise HTTPException(404, "Release not found")
     return [as_dict(item) for item in session.scalars(select(ReleaseEvidence).where(ReleaseEvidence.project_id == project_id, ReleaseEvidence.release_id == release_id).order_by(ReleaseEvidence.created_at)).all()]
+
+
+@app.post("/api/v1/projects/{project_id}/releases/{release_id}/approve")
+def approve_release(project_id: str, release_id: str, payload: ReleaseApprovalCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    release = session.get(Release, release_id)
+    if not release or release.project_id != project_id:
+        raise HTTPException(404, "Release not found")
+    if release.decision != "PASS":
+        raise HTTPException(409, "Only a PASS Release can be approved")
+    existing = (release.gate_result or {}).get("approval")
+    if existing:
+        raise HTTPException(409, "Release already has an approval record")
+    approval = {"approver": payload.approver, "reason": payload.reason, "approved_at": datetime.now().isoformat()}
+    release.gate_result = {**(release.gate_result or {}), "approval": approval, "approval_history": [approval]}
+    record_audit(session, project_id, "release", release.id, "approved", after={"decision": release.decision, "approval": approval}, details={"approval": approval})
+    session.commit(); session.refresh(release)
+    return as_dict(release)
 
 
 @app.get("/api/v1/projects/{project_id}/audit-events")
