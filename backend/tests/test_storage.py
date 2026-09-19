@@ -143,7 +143,7 @@ def test_calibration_image_statistics_are_recorded(tmp_path: Path):
     with TestClient(app) as client:
         project_id = client.post("/api/v1/projects", json={"name": "calibration-stats"}).json()["id"]
         dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "images", "version": "v1", "annotation_path": str(annotation)}).json()
-        calibration = client.post(f"/api/v1/projects/{project_id}/calibration-sets", json={"name": "cal", "version": "v1", "dataset_id": dataset["id"], "sampling": {"items": [1]}, "preprocessing": {"color": "rgb"}}).json()
+        calibration = client.post(f"/api/v1/projects/{project_id}/calibration-sets", json={"name": "cal", "version": "v1", "dataset_id": dataset["id"], "sampling": {"items": [1]}, "preprocessing": {"color": "rgb", "input_size": [2, 2], "normalization": {"mean": [10, 10, 10], "std": [10, 10, 10]}}}).json()
         inspected = client.post(f"/api/v1/projects/{project_id}/calibration-sets/{calibration['id']}/inspect")
         assert inspected.status_code == 200, inspected.text
         stats = inspected.json()["statistics"]
@@ -152,6 +152,8 @@ def test_calibration_image_statistics_are_recorded(tmp_path: Path):
         assert stats["resolutions"] == {"4x2": 1}
         assert stats["channels"] == {"3": 1}
         assert stats["pixel_mean_0_255"] == 20.0
+        assert stats["tensor_mean"] == 1.0
+        assert stats["preprocessing_applied"] is True
 
 
 def test_dataset_snapshot_and_diff(tmp_path: Path):
