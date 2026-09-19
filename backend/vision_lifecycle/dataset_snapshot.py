@@ -95,13 +95,42 @@ def build_dataset_snapshot(*, task_kind: str, format: str, manifest_path: str | 
             snapshot["counts"] = {"images": len(images), "categories": len(class_names)}
         except (OSError, csv.Error):
             snapshot["parse_status"] = "unavailable"
+    elif format.lower() in {"jsonl", "ndjson", "common-jsonl"} and manifest_path and Path(manifest_path).is_file():
+        try:
+            items: list[dict[str, Any]] = []
+            parse_errors = 0
+            with Path(manifest_path).open(encoding="utf-8") as file:
+                for index, line in enumerate(file):
+                    if not line.strip():
+                        continue
+                    try:
+                        value = json.loads(line)
+                    except json.JSONDecodeError:
+                        parse_errors += 1
+                        continue
+                    if not isinstance(value, dict):
+                        parse_errors += 1
+                        continue
+                    item = dict(value)
+                    item["id"] = str(item.get("id", item.get("image_id", item.get("path", index))))
+                    items.append(item)
+            snapshot["items"] = _canonical_items(items, "id")
+            snapshot["counts"] = {"items": len(items)}
+            snapshot["parse_errors"] = parse_errors
+            snapshot["parse_status"] = "complete" if parse_errors == 0 else "partial"
+            labels = sorted({str(item["label"]) for item in items if item.get("label") is not None})
+            if labels:
+                snapshot["class_names"] = labels
+                snapshot["counts"]["categories"] = len(labels)
+        except (OSError, ValueError):
+            snapshot["parse_status"] = "unavailable"
     return snapshot
 
 
 def diff_dataset_snapshots(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     """Compare two snapshots without exposing source paths."""
     result: dict[str, Any] = {"changed": [], "added": {}, "removed": {}, "modified": {}}
-    for collection in ("categories", "images", "annotations"):
+    for collection in ("categories", "images", "annotations", "items"):
         left_items = {str(item.get("id")): item for item in left.get(collection, []) if isinstance(item, dict) and item.get("id") is not None}
         right_items = {str(item.get("id")): item for item in right.get(collection, []) if isinstance(item, dict) and item.get("id") is not None}
         added = sorted(set(right_items) - set(left_items))

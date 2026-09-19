@@ -40,7 +40,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | ID | 원본 절 / 사용자 시나리오 | 현재 상태 | 남은 핵심 작업 / 코드 근거 |
 |---|---|---|---|
 | S01 | §4: 미라벨 원본 이미지·영상부터 등록 | 부분 구현 | Storage inventory와 DatasetVersion 등록, source fingerprint와 canonical snapshot, root 수정·보관/복원을 제공한다. 영상/metadata 상태와 item-level DataAsset 자동 결합은 남아 있다 |
-| S02 | §3–4: immutable dataset, 이전 버전 재현·diff | 부분 구현 | finalized version immutable, parent version, COCO·YOLO TXT·classification folder/CSV snapshot과 content hash, category/image/annotation diff, 원본 변경 시 평가 차단을 제공한다. 모든 형식의 full manifest diff와 storage 이동 검증은 남아 있다 |
+| S02 | §3–4: immutable dataset, 이전 버전 재현·diff | 부분 구현 | finalized version immutable, parent version, COCO·YOLO TXT·classification folder/CSV·공통 JSONL snapshot과 content hash, category/image/annotation/item diff, 원본 변경 시 평가 차단을 제공한다. 모든 형식의 full manifest diff는 남아 있다 |
 | S03 | §5: 클래스 분리·통합·폐기와 legacy 평가 | 부분 구현 | Dataset class mapping과 분류 prediction의 unknown label을 검증하고, LabelSchemaVersion parent와 `supersedes` lineage로 mapping history를 보존하며, record 오류를 상세로 보존한다. 고정 class ID·계층·legacy 변환 규칙과 자동 diff는 남아 있다 |
 | S04 | §6: 그룹 단위 split·누수 방지 | 부분 구현 | SplitVersion에 assignments/splits 계약, item 중복·unknown item·group leak·require_complete 미할당 검증과 UI 재검사를 제공한다. event/device/session metadata 자동 추출과 대규모 검증 job은 남아 있다 |
 | S05 | §7: Core/Field/Hard/Regression 고정 평가 세트 | 부분 구현 | EvaluationSetVersion을 평가 API/Run.config에 명시적으로 연결하고 Dataset 불일치를 거부하며 비교 계약에 포함한다. definition의 `items`/`image_ids`를 분류·COCO·ONNX batch 입력에 실제 적용하고 선택 개수/평가 레코드 수를 결과에 남긴다. 생성·재검증 시 중복/누락/범위/빈 목록 상태도 저장한다. 다중 set 보고서와 slice별 리포트는 남아 있다 |

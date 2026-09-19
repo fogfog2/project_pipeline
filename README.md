@@ -46,6 +46,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - 데이터 화면에서 참조 없는 초안 DatasetVersion만 registry에서 삭제하고, 확정·참조 데이터는 영향 확인 후 보관/새 버전으로 관리
 - Storage root 재연결·재검사 때 inventory asset의 동일 ID를 유지하면서 `verified / changed / missing` 상태와 hash를 갱신
 - Storage 화면의 재검사 결과에 asset 검사·변경·누락 개수를 즉시 표시
+- 공통 JSONL/NDJSON manifest를 경로 검사·snapshot·diff에 사용할 수 있으며, 각 record의 `id`와 `path` 또는 `image_id`를 보존
 - 검출 평가에서 invalid bbox/image/class/score를 성공 지표와 분리하고 최대 50건의 오류 이유를 보존
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - Release 생성 시 evaluation/board/quantization/artifact evidence를 snapshot·content hash로 고정하고 필수 evidence 누락을 INCOMPLETE으로 표시

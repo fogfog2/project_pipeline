@@ -2,6 +2,7 @@ from pathlib import Path
 
 from vision_lifecycle.adapters.coco import validate_coco
 from vision_lifecycle.adapters.yolo import validate_yolo_directory
+from vision_lifecycle.adapters.jsonl import validate_jsonl
 from vision_lifecycle.dataset_snapshot import build_dataset_snapshot
 
 
@@ -39,3 +40,17 @@ def test_yolo_and_classification_snapshots_are_portable(tmp_path: Path):
     classification_snapshot = build_dataset_snapshot(task_kind="classification", format="classification-folder", manifest_path=str(classification), annotation_path=None)
     assert classification_snapshot["class_names"] == ["cat"]
     assert classification_snapshot["images"][0]["label"] == "cat"
+
+
+def test_jsonl_manifest_is_validated_and_diffed(tmp_path: Path):
+    manifest = tmp_path / "records.jsonl"
+    manifest.write_text('{"id":"one","path":"images/one.jpg","label":"cat"}\n{"id":"two","path":"images/two.jpg","label":"dog"}\n', encoding="utf-8")
+    result = validate_jsonl(str(manifest))
+    assert result["status"] == "passed" and result["record_count"] == 2
+    snapshot = build_dataset_snapshot(task_kind="classification", format="jsonl", manifest_path=str(manifest), annotation_path=None)
+    assert snapshot["counts"] == {"items": 2, "categories": 2}
+    assert snapshot["class_names"] == ["cat", "dog"]
+    manifest.write_text('{"id":"one","path":"images/one.jpg","label":"cat"}\n{"id":"two","path":"images/two.jpg","label":"bird"}\n', encoding="utf-8")
+    changed = build_dataset_snapshot(task_kind="classification", format="jsonl", manifest_path=str(manifest), annotation_path=None)
+    from vision_lifecycle.dataset_snapshot import diff_dataset_snapshots
+    assert diff_dataset_snapshots(snapshot, changed)["modified"]["items"] == ["two"]

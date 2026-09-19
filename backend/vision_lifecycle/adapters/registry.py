@@ -28,6 +28,7 @@ ADAPTERS: tuple[AdapterSpec, ...] = (
     AdapterSpec("coco", "dataset", ("detection",), ("inspect", "validate", "prediction-evaluation", "onnx-batch-evaluation")),
     AdapterSpec("yolo-txt", "dataset", ("detection",), ("inspect", "validate")),
     AdapterSpec("classification", "dataset", ("classification",), ("inspect", "validate", "onnx-batch-evaluation")),
+    AdapterSpec("jsonl-manifest", "dataset", ("unknown", "classification", "detection"), ("inspect", "validate", "snapshot", "diff")),
     AdapterSpec("mmdetection", "inference", ("detection",), ("register", "native-inference", "external-result-import")),
     AdapterSpec("onnx", "inference", ("classification", "detection"), ("preview", "batch-evaluation", "cpu")),
     AdapterSpec("mmdeploy", "inference", ("detection",), ("runtime-inference", "target-profile")),
