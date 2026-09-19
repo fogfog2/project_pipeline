@@ -16,7 +16,10 @@ def test_backup_restore_writes_and_verifies_registry_manifest(tmp_path: Path, mo
         project = Project(name="backup-project")
         session.add(project)
         session.flush()
-        session.add(Artifact(project_id=project.id, kind="fixture", logical_name="model", sha256="a" * 64, size_bytes=1))
+        managed = tmp_path / "managed" / "model.bin"
+        managed.parent.mkdir()
+        managed.write_bytes(b"model")
+        session.add(Artifact(project_id=project.id, kind="fixture", logical_name="model", sha256="a" * 64, size_bytes=5, managed_path=str(managed)))
         session.commit()
         project_id = project.id
     backup = tmp_path / "registry.sqlite"
@@ -24,6 +27,8 @@ def test_backup_restore_writes_and_verifies_registry_manifest(tmp_path: Path, mo
     cli.main()
     manifest = Path(f"{backup}.manifest.json")
     assert backup.is_file() and manifest.is_file()
+    assert list(Path(f"{backup}.artifacts").rglob("model.bin"))
+    managed.unlink()
     with SessionLocal() as session:
         session.get(Project, project_id).name = "changed-before-restore"
         session.commit()
@@ -31,6 +36,7 @@ def test_backup_restore_writes_and_verifies_registry_manifest(tmp_path: Path, mo
     cli.main()
     with SessionLocal() as session:
         assert session.get(Project, project_id).name == "backup-project"
+    assert managed.read_bytes() == b"model"
 
 
 def test_cli_import_result_uses_same_manifest_contract(tmp_path: Path, monkeypatch, capsys):

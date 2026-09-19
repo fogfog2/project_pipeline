@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,14 +62,63 @@ def _read_json(path: str) -> dict:
     return value
 
 
-def _backup_manifest(session) -> dict:
+def _backup_manifest(session, managed_backup_root: Path | None = None) -> dict:
+    artifacts = []
+    for item in session.scalars(select(Artifact)).all():
+        entry = {"id": item.id, "kind": item.kind, "sha256": item.sha256, "status": item.status}
+        if managed_backup_root and item.managed_path:
+            source = Path(item.managed_path).expanduser()
+            if source.is_file() or source.is_dir():
+                target = managed_backup_root / item.id / source.name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if source.is_dir():
+                    shutil.copytree(source, target, dirs_exist_ok=True)
+                    entry["managed_backup_kind"] = "directory"
+                else:
+                    shutil.copy2(source, target)
+                    entry["managed_backup_kind"] = "file"
+                    entry["managed_backup_sha256"] = file_sha256(target)
+                entry["managed_backup_path"] = str(target.relative_to(managed_backup_root))
+        artifacts.append(entry)
     return {
         "schema_version": "1.0",
         "generated_at": datetime.now(UTC).isoformat(),
         "projects": [{"id": item.id, "name": item.name} for item in session.scalars(select(Project)).all()],
         "storages": [{"id": item.id, "name": item.name, "status": item.status} for item in session.scalars(select(StorageMapping)).all()],
-        "artifacts": [{"id": item.id, "kind": item.kind, "sha256": item.sha256, "status": item.status} for item in session.scalars(select(Artifact)).all()],
+        "artifacts": artifacts,
     }
+
+
+def _restore_managed_artifacts(db_path: Path, manifest_path: Path, backup_root: Path) -> int:
+    """Restore managed copies after the registry is restored, preserving DB paths."""
+    if not manifest_path.is_file() or not backup_root.is_dir():
+        return 0
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    restored = 0
+    connection = sqlite3.connect(str(db_path))
+    try:
+        rows = connection.execute("SELECT id, managed_path FROM artifacts WHERE managed_path IS NOT NULL").fetchall()
+    finally:
+        connection.close()
+    managed_paths = {artifact_id: Path(path).expanduser() for artifact_id, path in rows}
+    for entry in manifest.get("artifacts", []):
+        relative = entry.get("managed_backup_path")
+        target = managed_paths.get(entry.get("id"))
+        if not relative or target is None:
+            continue
+        source = backup_root / relative
+        if not source.is_file() and not source.is_dir():
+            raise ValueError(f"Managed artifact backup is missing: {source}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(source, target)
+            expected = entry.get("managed_backup_sha256")
+            if expected and file_sha256(target) != expected:
+                raise ValueError(f"Managed artifact hash mismatch after restore: {entry.get('id')}")
+        restored += 1
+    return restored
 
 
 def _verify_backup_manifest(db_path: Path, manifest_path: Path) -> dict:
@@ -177,9 +227,10 @@ def main() -> None:
         finally:
             destination.close(); source.close()
         manifest_path = Path(args.manifest or f"{output}.manifest.json")
+        managed_backup_root = Path(f"{output}.artifacts")
         with SessionLocal() as session:
             manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            manifest_path.write_text(json.dumps(_backup_manifest(session), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            manifest_path.write_text(json.dumps(_backup_manifest(session, managed_backup_root), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"Wrote registry backup: {output}")
         print(f"Wrote backup manifest: {manifest_path}")
         return
@@ -196,6 +247,8 @@ def main() -> None:
         init_database()
         manifest_path = Path(args.manifest or f"{source_path}.manifest.json")
         verification = _verify_backup_manifest(db_path, manifest_path)
+        restored_artifacts = _restore_managed_artifacts(db_path, manifest_path, Path(f"{source_path}.artifacts"))
+        verification["managed_artifacts_restored"] = restored_artifacts
         print(f"Restored registry backup: {source_path} ({verification['status']})")
         return
     with SessionLocal() as session:
