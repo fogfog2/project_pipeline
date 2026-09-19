@@ -50,6 +50,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - Dataset 초안 등록 화면에서도 공통 JSONL/NDJSON 형식을 선택할 수 있으며 task는 자동 추정하지 않고 `unknown`으로 시작
 - 데이터 샘플 preview에서 COCO bbox와 JSONL record를 같은 bounded preview 흐름으로 확인
 - YOLO annotation과 classification folder/CSV도 동일한 snapshot 기반 샘플 preview에서 확인
+- Classification folder와 CSV를 UI에서 별도 형식으로 선택해 잘못된 입력 경로가 빈 snapshot으로 저장되지 않도록 검증
 - 검출 평가에서 invalid bbox/image/class/score를 성공 지표와 분리하고 최대 50건의 오류 이유를 보존
 - 명시적 metric 규칙을 사용하는 Release gate와 민감 경로를 제거한 결과 export
 - Release 생성 시 evaluation/board/quantization/artifact evidence를 snapshot·content hash로 고정하고 필수 evidence 누락을 INCOMPLETE으로 표시

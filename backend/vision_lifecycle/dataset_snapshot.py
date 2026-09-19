@@ -69,7 +69,7 @@ def build_dataset_snapshot(*, task_kind: str, format: str, manifest_path: str | 
             snapshot["counts"] = {"images": len(images), "annotations": len(annotations), "categories": len(class_ids)}
         else:
             snapshot["parse_status"] = "unavailable"
-    elif format.lower() in {"classification", "classification-folder"}:
+    elif format.lower() in {"classification", "classification-folder"} and Path(manifest_path or annotation_path or "").expanduser().is_dir():
         root = Path(manifest_path or annotation_path or "").expanduser()
         if root.is_dir():
             images = []
@@ -82,9 +82,9 @@ def build_dataset_snapshot(*, task_kind: str, format: str, manifest_path: str | 
             snapshot["images"] = _canonical_items(images, "id")
             snapshot["class_names"] = class_names
             snapshot["counts"] = {"images": len(images), "categories": len(class_names)}
-        else:
-            snapshot["parse_status"] = "unavailable"
-    elif format.lower() in {"classification-csv", "csv"} and manifest_path and Path(manifest_path).is_file():
+    elif format.lower() in {"classification", "classification-folder"}:
+        snapshot["parse_status"] = "unavailable"
+    elif format.lower() in {"classification-csv", "csv", "classification"} and manifest_path and Path(manifest_path).is_file():
         try:
             with Path(manifest_path).open(encoding="utf-8", newline="") as file:
                 rows = list(csv.DictReader(file))

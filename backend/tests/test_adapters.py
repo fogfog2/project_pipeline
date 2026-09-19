@@ -91,3 +91,11 @@ def test_classification_snapshot_preview_returns_records(tmp_path: Path):
         preview = client.get(f"/api/v1/projects/{project_id}/datasets/{dataset['id']}/preview")
         assert preview.status_code == 200
         assert preview.json()["records"][0]["label"] == "cat"
+
+
+def test_classification_csv_snapshot_is_supported(tmp_path: Path):
+    csv_path = tmp_path / "labels.csv"
+    csv_path.write_text("path,label\none.jpg,cat\ntwo.jpg,dog\n", encoding="utf-8")
+    snapshot = build_dataset_snapshot(task_kind="classification", format="classification-csv", manifest_path=str(csv_path), annotation_path=None)
+    assert snapshot["counts"] == {"images": 2, "categories": 2}
+    assert snapshot["class_names"] == ["cat", "dog"]
