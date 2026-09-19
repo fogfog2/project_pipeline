@@ -97,13 +97,14 @@ function App() {
   const [fieldBatches, setFieldBatches] = useState<FieldBatch[]>([]);
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult>();
   const [page, setPage] = useState(initialRoute.page);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [message, setMessage] = useState("빈 프로젝트를 만들고 가이드에 따라 Storage, Dataset, Model, Evaluation을 연결하세요.");
 
   const selected = useMemo(() => projects.find((project) => project.id === projectId), [projects, projectId]);
   const navigate = (nextPage: string = page, nextProjectId: string | undefined = projectId) => {
     const hash = nextProjectId ? `#/projects/${encodeURIComponent(nextProjectId)}/${encodeURIComponent(nextPage)}` : "#/";
     if (window.location.hash !== hash) window.location.hash = hash;
-    setPage(nextPage); setProjectId(nextProjectId);
+    setPage(nextPage); setProjectId(nextProjectId); setMobileMenuOpen(false);
   };
   const loadProject = async (id: string) => {
     const [nextOverview, nextModels, nextRuns, nextDatasets, nextJobs, nextRunners, nextTargets, nextStorages, nextReleases, labelSchemas, splits, evaluationSets, calibrationSets, nextQuantizationRuns, nextBoardBenchmarks, nextArtifacts, nextAuditEvents, nextFieldBatches] = await Promise.all([
@@ -224,10 +225,10 @@ function App() {
 
   const nav = ROUTE_PAGES;
   return <div className="shell">
-    <aside><div className="brand">VISION<br/><b>LIFECYCLE</b></div><button className="demo" disabled={isStatic} onClick={() => void createRecipeProject()}>실습 프로젝트 시작</button>
+    <aside className={mobileMenuOpen ? "open" : ""}><div className="brand">VISION<br/><b>LIFECYCLE</b></div><button className="demo" disabled={isStatic} onClick={() => void createRecipeProject()}>실습 프로젝트 시작</button>
       <nav>{nav.map((item) => <button className={page === item ? "active" : ""} onClick={() => navigate(item)} key={item}>{item}</button>)}</nav>
       <small>Local mode · API v1</small></aside>
-    <main><header><div><p className="eyebrow">PROJECT / {selected?.task_kind || "SETUP"}</p><h1>{selected?.name || "Vision AI Lifecycle"}</h1>{selected && <small className="muted">{selected.mode === "guided" ? "Guided practice · 자료와 결과를 단계별로 연결" : "User project · 직접 연결"}</small>}</div><div className="header-actions"><button className="secondary" disabled={isStatic} onClick={() => navigate("개요", undefined)}>새 프로젝트</button><select aria-label="프로젝트 선택" value={projectId || ""} onChange={(event) => event.target.value ? void loadProject(event.target.value) : navigate("개요", undefined)}><option value="">프로젝트 선택</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></div></header>
+    <main><header><div><button className="menu-toggle secondary" aria-label="메뉴 열기" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((value) => !value)}>☰ 메뉴</button><p className="eyebrow">PROJECT / {selected?.task_kind || "SETUP"}</p><h1>{selected?.name || "Vision AI Lifecycle"}</h1>{selected && <small className="muted">{selected.mode === "guided" ? "Guided practice · 자료와 결과를 단계별로 연결" : "User project · 직접 연결"}</small>}</div><div className="header-actions"><button className="secondary" disabled={isStatic} onClick={() => navigate("개요", undefined)}>새 프로젝트</button><select aria-label="프로젝트 선택" value={projectId || ""} onChange={(event) => event.target.value ? void loadProject(event.target.value) : navigate("개요", undefined)}><option value="">프로젝트 선택</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></div></header>
       <p className="notice">{message}</p>
       {!projectId ? <ProjectStarter onCreated={(name, task) => void createBlankProject(name, task)} onRecipe={() => void createRecipeProject()} onError={setMessage}/> : <>
       {page === "개요" && <><section className="cards"><Metric label="Dataset versions" value={overview?.counts.datasets ?? 0}/><Metric label="Model versions" value={overview?.counts.models ?? 0}/><Metric label="Evaluation runs" value={overview?.counts.runs ?? 0}/><Metric label="Lineage completeness" value={`${overview?.lineage_completeness ?? 0}%`}/></section>
