@@ -602,7 +602,7 @@ def archive_storage(project_id: str, storage_id: str, session: Session = Depends
     if mapping.status == "archived":
         validation = storage_status(mapping.root_path)
         mapping.status = validation["status"]
-        mapping.last_validation = validation
+        mapping.last_validation = {**validation, "assets": _refresh_storage_assets(session, mapping)} if validation["status"] == "available" else validation
     else:
         mapping.status = "archived"
     record_audit(session, project_id, "storage", mapping.id, "archived" if mapping.status == "archived" else "restored", before={"status": previous_status}, after={"status": mapping.status, "root_path": mapping.root_path})
