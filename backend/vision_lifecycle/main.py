@@ -238,6 +238,13 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
         raise HTTPException(409, "A project with this name already exists")
     project = Project(**payload.model_dump())
     session.add(project); session.flush()
+    # Guided projects are immediately usable: create their persisted checklist
+    # together with the project so the first screen can explain the next action.
+    if project.mode == "guided":
+        recipe_id = project.recipe_id if project.recipe_id in _RECIPE_STEPS else "blank"
+        onboarding = OnboardingSession(project_id=project.id, recipe_id=recipe_id, recipe_version="1.0")
+        session.add(onboarding); session.flush()
+        session.add_all([StepProgress(session_id=onboarding.id, step_id=step) for step in _RECIPE_STEPS[recipe_id]])
     record_audit(session, project.id, "project", project.id, "created", after={"name": project.name, "task_kind": project.task_kind, "mode": project.mode})
     session.commit(); session.refresh(project)
     return as_dict(project)

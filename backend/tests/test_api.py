@@ -825,6 +825,21 @@ def test_training_config_path_is_managed_and_visible_in_lineage(tmp_path):
         assert any(edge["source"] == payload["id"] and edge["target"] == artifact_id and edge["relation"] == "has_artifact" for edge in graph["edges"])
 
 
+def test_guided_project_starts_with_persisted_onboarding_steps():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project = client.post("/api/v1/projects", json={
+            "name": "guided-start", "mode": "guided", "recipe_id": "mmdetection-onboarding",
+        })
+        assert project.status_code == 201
+        onboarding = client.get(f"/api/v1/projects/{project.json()['id']}/onboarding")
+        assert onboarding.status_code == 200
+        payload = onboarding.json()
+        assert payload["session"]["recipe_id"] == "mmdetection-onboarding"
+        assert [step["step_id"] for step in payload["steps"]][:3] == ["project", "storage", "data"]
+
+
 def test_audit_events_track_changes_and_export_redacts_paths():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
