@@ -39,6 +39,7 @@ def test_demo_api_validates_evaluates_and_redacts():
         assert full.json()["result"]["bbox_mAP"] == 1.0
         exported = client.get(f"/api/v1/projects/{project_id}/export").json()
         assert exported["schema_version"] == "1.1" and exported["generated_at"] and exported["overview"]["counts"]["runs"] >= 2
+        assert any(edge["relation"] == "trained_from" for edge in exported["lineage"]["edges"])
         assert "storage_root" not in exported["project"]
         assert "annotation_path" not in exported["datasets"][0]
         assert "artifact_path" not in exported["models"][0]

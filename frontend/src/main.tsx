@@ -32,6 +32,7 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
     if (path === "/plugins") return [] as T;
     if (path === "/environment") return {} as T;
     if (path.endsWith("/overview")) return snapshot.overview as T;
+    if (path.endsWith("/lineage")) return (snapshot.lineage || { nodes: [], edges: [] }) as T;
     if (path.endsWith("/models")) return snapshot.models as T;
     if (path.endsWith("/alias-history")) {
       const modelId = path.split("/").at(-2);
@@ -466,7 +467,7 @@ function ReleaseEvidenceTable({ projectId, releases, onError }: { projectId: str
 function LineageView({ projectId, onError }: { projectId: string; onError: (message: string) => void }) {
   const [graph, setGraph] = useState<{ nodes: Array<{ id: string; kind: string; label: string; status?: string }>; edges: Array<{ source: string; target: string; relation: string }> }>();
   const load = async () => { try { setGraph(await api(`/projects/${projectId}/lineage`)); } catch (error) { onError(`Lineage 조회 오류: ${String(error)}`); } };
-  return <section><h2>Lineage graph</h2><p>Dataset → Model → Evaluation → Quantization/Board → Release 관계를 ID와 함께 확인합니다.</p><button disabled={isStatic} onClick={() => void load()}>Lineage 불러오기</button>{graph && <><p className="muted">노드 {graph.nodes.length}개 · 관계 {graph.edges.length}개</p><div className="tablewrap"><table><thead><tr><th>출발</th><th>관계</th><th>도착</th></tr></thead><tbody>{graph.edges.map((edge, index) => <tr key={`${edge.source}-${edge.target}-${index}`}><td>{graph.nodes.find((node) => node.id === edge.source)?.label || edge.source}</td><td>{edge.relation}</td><td>{graph.nodes.find((node) => node.id === edge.target)?.label || edge.target}</td></tr>)}</tbody></table></div></>}</section>;
+  return <section><h2>Lineage graph</h2><p>Dataset → Model → Evaluation → Quantization/Board → Release 관계를 ID와 함께 확인합니다.</p><button onClick={() => void load()}>Lineage 불러오기</button>{graph && <><p className="muted">노드 {graph.nodes.length}개 · 관계 {graph.edges.length}개</p><div className="tablewrap"><table><thead><tr><th>출발</th><th>관계</th><th>도착</th></tr></thead><tbody>{graph.edges.map((edge, index) => <tr key={`${edge.source}-${edge.target}-${index}`}><td>{graph.nodes.find((node) => node.id === edge.source)?.label || edge.source}</td><td>{edge.relation}</td><td>{graph.nodes.find((node) => node.id === edge.target)?.label || edge.target}</td></tr>)}</tbody></table></div></>}</section>;
 }
 function StorageConnect({ projectId, storages, onSaved, onError }: { projectId: string; storages: StorageMapping[]; onSaved: () => void; onError: (message: string) => void }) {
   const [name, setName] = useState("dataset-root"); const [rootPath, setRootPath] = useState(""); const [notes, setNotes] = useState("");

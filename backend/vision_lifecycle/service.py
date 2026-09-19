@@ -503,6 +503,7 @@ def safe_export(session: Session, project_id: str) -> dict:
     }
     snapshot = {
         "schema_version": "1.1", "generated_at": datetime.now(UTC).isoformat(), "project": safe(project), "overview": overview_export,
+        "lineage": scrub(lineage(session, project_id)),
         "datasets": [safe(x) for x in session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()],
         "models": [safe(x) for x in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()],
         "model_alias_history": [safe(x) for x in session.scalars(select(ModelAliasHistory).where(ModelAliasHistory.project_id == project_id).order_by(ModelAliasHistory.created_at.desc())).all()],
