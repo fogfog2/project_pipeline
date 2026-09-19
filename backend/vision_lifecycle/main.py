@@ -98,6 +98,7 @@ def list_contract_schemas():
             "run": contract_schemas.RunCreate.model_json_schema(),
             "result_manifest": contract_schemas.ResultImportCreate.model_json_schema(),
             "release": contract_schemas.ReleaseCreate.model_json_schema(),
+            "recipe": contract_schemas.RECIPE_SCHEMA,
         },
     }
 

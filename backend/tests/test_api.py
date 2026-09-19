@@ -303,6 +303,15 @@ def test_recipe_contract_is_read_only_and_versioned():
         assert client.get("/api/v1/recipes/unknown-recipe").status_code == 404
 
 
+def test_schema_registry_includes_recipe_contract():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        recipe = client.get("/api/v1/schemas").json()["schemas"]["recipe"]
+        assert recipe["title"] == "Vision Lifecycle Recipe"
+        assert "steps" in recipe["required"]
+
+
 def test_result_import_is_idempotent_and_detects_conflict():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

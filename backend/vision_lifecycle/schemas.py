@@ -5,6 +5,42 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+# Recipe files are YAML for human editing, while this JSON Schema documents
+# the stable shape consumed by the UI and onboarding agents. The API and CLI
+# expose the same object alongside the Pydantic registry contracts.
+RECIPE_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Vision Lifecycle Recipe",
+    "type": "object",
+    "required": ["id", "version", "task", "title", "steps"],
+    "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "task": {"type": "string", "enum": ["unknown", "classification", "detection"]},
+        "title": {"type": "string", "minLength": 1},
+        "prerequisites": {"type": "array", "items": {"type": "string"}},
+        "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}},
+        "artifacts": {"type": "array", "items": {"type": "object"}},
+        "troubleshooting": {"type": "array", "items": {"type": "object"}},
+    },
+    "additionalProperties": True,
+    "$defs": {
+        "step": {
+            "type": "object",
+            "required": ["id", "action", "expected_evidence"],
+            "properties": {
+                "id": {"type": "string"},
+                "action": {"type": "string"},
+                "purpose": {"type": "string"},
+                "input": {"type": "string"},
+                "expected_evidence": {"type": "array", "items": {"type": "string"}},
+            },
+            "additionalProperties": True,
+        }
+    },
+}
+
+
 class ProjectCreate(BaseModel):
     name: str
     description: str = ""
