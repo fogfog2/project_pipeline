@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type Project = { id: string; name: string; description: string; task_kind: string; mode?: string; recipe_id?: string; status?: string };
+type Project = { id: string; name: string; description: string; task_kind: string; storage_root?: string; git_url?: string; default_branch?: string; mode?: string; recipe_id?: string; status?: string };
 type Model = { id: string; name: string; version: string; family: string; alias?: string; precision: string; format: string; task_kind?: string; runnable: boolean; status?: string; artifact_path?: string; config_path?: string };
 type Run = { id: string; kind: string; name: string; status: string; metrics: Record<string, number>; details?: Record<string, unknown>; model_id?: string; dataset_id?: string; notes: string };
 type Release = { id: string; name: string; model_id: string; evaluation_run_id?: string; baseline_model_id?: string; decision: string; gate_result: Record<string, unknown>; notes: string };
@@ -240,7 +240,7 @@ function App() {
       {page === "가이드" && <Guide projectId={projectId} recipeId={selected?.recipe_id || "blank"} onNavigate={(nextPage) => navigate(nextPage)} onError={setMessage}/>}
       {page === "실행·보드" && <><section><h2>실행·보드</h2><p>보드와 runtime은 버전이 있는 Target Profile로 기록합니다. 실제 benchmark manifest에는 해당 profile ID를 연결합니다.</p><TargetTable targets={targets}/>{!isStatic && <TargetConnect projectId={projectId} onSaved={() => void loadProject(projectId)} onError={setMessage}/>}</section><QuantizationConnect projectId={projectId} models={models} calibrationSets={versions.filter((item) => item.kind === "calibration")} onSaved={() => void loadProject(projectId)} onError={setMessage}/><BoardBenchmarkConnect projectId={projectId} models={models} targets={targets} runs={runs} onSaved={() => void loadProject(projectId)} onError={setMessage}/><section><h2>연결된 lineage 결과</h2><QuantizationTable projectId={projectId} runs={quantizationRuns} onSaved={() => void loadProject(projectId)} onError={setMessage}/><BoardBenchmarkTable projectId={projectId} benchmarks={boardBenchmarks} onSaved={() => void loadProject(projectId)} onError={setMessage}/></section><QuantizationComparison projectId={projectId} quantizationRuns={quantizationRuns} benchmarks={boardBenchmarks} runs={runs} onError={setMessage}/><section><h2>등록 작업</h2><p>등록 runner만 실행할 수 있습니다. 모의 board runner는 result contract 검증용입니다.</p><button disabled={isStatic} onClick={() => void runMockBoard()}>모의 보드 실행</button><JobTable jobs={jobs} onCancel={(id) => void cancelJob(id)} onRetry={(id) => void retryJob(id)}/></section></>}
       {page === "Release·리포트" && <><section><h2>Release·리포트</h2><p>Gate는 필수 지표가 없으면 INCOMPLETE로 처리합니다. JSON export API는 모델과 데이터의 절대 경로를 제거합니다.</p><ReleaseTable releases={releases}/><ReleaseConnect projectId={projectId} models={models} runs={runs} onSaved={() => void loadProject(projectId)} onError={setMessage}/><ReleaseEvidenceTable projectId={projectId} releases={releases} onError={setMessage}/><code>GET /api/v1/projects/{projectId}/export</code></section><LineageView projectId={projectId} onError={setMessage}/></>}
-      {page === "연결·설정" && <><StorageConnect projectId={projectId} storages={storages} onSaved={() => void loadProject(projectId)} onError={setMessage}/><RunnerConnect projectId={projectId} runners={runners} onSaved={() => void loadProject(projectId)} onError={setMessage}/><AgentPrompt projectId={projectId} onError={setMessage}/></>}
+      {page === "연결·설정" && <><ProjectSettings project={selected} onSaved={async () => { await loadProjects(); if (projectId) await loadProject(projectId); }} onError={setMessage}/><StorageConnect projectId={projectId} storages={storages} onSaved={() => void loadProject(projectId)} onError={setMessage}/><RunnerConnect projectId={projectId} runners={runners} onSaved={() => void loadProject(projectId)} onError={setMessage}/><AgentPrompt projectId={projectId} onError={setMessage}/></>}
       {page === "감사 로그" && <AuditLogTable events={auditEvents}/>}
       </>}</main></div>;
 }
@@ -409,6 +409,23 @@ function AgentPrompt({ projectId, onError }: { projectId: string; onError: (mess
   const [prompt, setPrompt] = useState("");
   const getPrompt = async () => { try { const result = await api<{ prompt: string }>(`/projects/${projectId}/agent-request`); setPrompt(result.prompt); } catch (error) { onError(`Agent 요청문 생성 오류: ${String(error)}`); } };
   return <section><h2>Agent 연결 요청문</h2><p>등록한 경로와 lineage 누락 항목을 사용해 자료 연결을 요청합니다. 자격증명은 저장하거나 표시하지 않습니다.</p><button onClick={() => void getPrompt()}>요청문 만들기</button>{prompt && <><pre>{prompt}</pre><button className="secondary" onClick={() => void navigator.clipboard.writeText(prompt)}>클립보드로 복사</button></>}</section>;
+}
+function ProjectSettings({ project, onSaved, onError }: { project?: Project; onSaved: () => Promise<void>; onError: (message: string) => void }) {
+  const [description, setDescription] = useState(project?.description || "");
+  const [storageRoot, setStorageRoot] = useState(project?.storage_root || "");
+  const [gitUrl, setGitUrl] = useState(project?.git_url || "");
+  const [defaultBranch, setDefaultBranch] = useState(project?.default_branch || "main");
+  useEffect(() => { setDescription(project?.description || ""); setStorageRoot(project?.storage_root || ""); setGitUrl(project?.git_url || ""); setDefaultBranch(project?.default_branch || "main"); }, [project?.id]);
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!project) return;
+    try {
+      await api(`/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ description, storage_root: storageRoot || null, git_url: gitUrl || null, default_branch: defaultBranch || null }) });
+      await onSaved();
+      onError("프로젝트 연결 설정을 저장했습니다. 이 정보는 가이드와 Agent 요청문에 반영됩니다.");
+    } catch (error) { onError(`프로젝트 설정 저장 오류: ${String(error)}`); }
+  };
+  return <section><span className="step-label">PROJECT CONNECTION</span><h2>프로젝트·Git 연결 설정</h2><p>외부 학습 코드와 데이터의 위치를 논리적으로 기록합니다. 저장만으로 Git 명령이나 업로드를 실행하지 않으며, 비밀값은 입력하지 마세요.</p><form className="form two" onSubmit={(event) => void save(event)}><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="프로젝트 설명"/><input value={storageRoot} onChange={(event) => setStorageRoot(event.target.value)} placeholder="기본 작업 폴더(서버 경로)"/><input value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} placeholder="Git 저장소 URL, 예: https://github.com/org/repo"/><input value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} placeholder="기준 브랜치, 예: main"/><button disabled={isStatic || !project} type="submit">연결 설정 저장</button></form></section>;
 }
 function Guide({ projectId, recipeId, onNavigate, onError }: { projectId: string; recipeId: string; onNavigate: (page: string) => void; onError: (message: string) => void }) {
   const [steps, setSteps] = useState<Array<{ id: string; step_id: string; status: string; evidence: Record<string, unknown>; readiness?: { ready: boolean; reason: string } }>>([]);

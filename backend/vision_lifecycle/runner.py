@@ -265,5 +265,10 @@ def cancel(job_id: str) -> bool:
         process = _processes.get(job_id)
     if not process:
         return False
-    process.terminate()
+    # Keep cancellation semantics identical to timeout handling: a runner
+    # may spawn a shell, framework process, or board utility. Terminating only
+    # the immediate parent leaves those descendants behind and can corrupt a
+    # later retry. POSIX runners are started in their own session, so signal
+    # the whole process group here.
+    _signal_process_group(process, getattr(signal, "SIGTERM", 15))
     return True

@@ -173,6 +173,21 @@ def test_runner_cancellation_stops_profile_process_group():
         assert "Cancellation requested" in current["log"]
 
 
+def test_cancel_uses_process_group_signal(monkeypatch):
+    from vision_lifecycle import runner
+
+    class FakeProcess:
+        pid = 1234
+        def poll(self):
+            return None
+
+    calls = []
+    monkeypatch.setattr(runner, "_processes", {"JOB-1": FakeProcess()})
+    monkeypatch.setattr(runner, "_signal_process_group", lambda process, signal_number: calls.append((process, signal_number)))
+    assert runner.cancel("JOB-1") is True
+    assert calls and calls[0][0].pid == 1234
+
+
 def test_cancel_running_job_without_local_process_leaves_worker_cancellation_marker():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
@@ -231,6 +246,27 @@ def test_onboarding_session_persists_step_evidence():
         storage_step = next(step for step in loaded["steps"] if step["step_id"] == "storage")
         assert storage_step["status"] == "completed"
         assert storage_step["readiness"]["ready"] is True
+
+
+def test_project_connection_settings_are_editable_and_persisted():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        created = client.post("/api/v1/projects", json={"name": "connection-settings", "task_kind": "unknown"})
+        assert created.status_code == 201
+        project_id = created.json()["id"]
+        updated = client.patch(f"/api/v1/projects/{project_id}", json={
+            "description": "customer vision project",
+            "storage_root": "/mnt/vision",
+            "git_url": "https://github.com/example/vision",
+            "default_branch": "main",
+        })
+        assert updated.status_code == 200
+        assert updated.json()["git_url"].endswith("/vision")
+        listed = client.get("/api/v1/projects").json()
+        persisted = next(item for item in listed if item["id"] == project_id)
+        assert persisted["storage_root"] == "/mnt/vision"
+        assert persisted["default_branch"] == "main"
 
 
 def test_result_import_is_idempotent_and_detects_conflict():
