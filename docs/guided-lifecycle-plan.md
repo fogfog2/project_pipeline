@@ -195,4 +195,4 @@ UI만 먼저 채우고 버튼을 비활성 상태로 남기는 방식으로 완�
 14. 정적 Pages는 demo/read-only/생성시각을 표시하고 로컬 경로 입력·실행·수정 버튼을 제공하지 않는다. 인터랙티브 실습은 로컬 설치 안내로 연결한다.
 15. README만 따라 합성 recipe 완료 후 새 빈 프로젝트에서 자신의 자료를 연결한다. MMDetection 실습은 별도로 실제 RTMDet/YOLOX 실행 증거를 남긴다.
 
-이번 변경은 계획 문서 작성까지다. 현재 DB·예제·UI의 실제 변경은 후속 구현에서 위 순서와 보존 정책에 따라 수행한다.
+현재 저장소에는 위 흐름의 API·SQLite registry·React UI·합성 ONNX fixture·RTMDet/YOLOX recipe 계약이 구현되어 있다. 구현 검증 결과와 남은 범위는 [lifecycle-gap-analysis.md](lifecycle-gap-analysis.md)에 기록한다. 이 문서의 완료 검증 항목은 실제 MMDetection/보드 환경에서 추가로 확인해야 하는 인수 시험 기준으로 유지한다.

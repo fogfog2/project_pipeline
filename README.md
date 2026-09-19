@@ -165,7 +165,7 @@ skill은 자료를 조사하고, 확인 가능한 lineage와 누락된 provenanc
 
 ## 개발 상태와 한계
 
-최신 제품 설계는 [빈 프로젝트에서 시작하는 실습형 Lifecycle 계획](docs/guided-lifecycle-plan.md)이다. 가이드 단계별 실제 연결·평가·변경 비교, 수정/보관, 디렉터리 연결과 작업 로그 UX를 포함한다. 이는 후속 개발 계획이며 현재 UI가 해당 흐름을 모두 제공하는 것은 아니다.
+최신 제품 설계와 사용자 흐름은 [빈 프로젝트에서 시작하는 실습형 Lifecycle 계획](docs/guided-lifecycle-plan.md)이다. 현재 구현에는 빈 프로젝트·가이드 단계, 실제 연결·평가·변경 비교, 수정/보관, 디렉터리 연결, cursor 기반 작업 로그와 readiness 표시가 포함되어 있다.
 
 원본 계획의 전체 시나리오는 아직 구현되지 않았다. 현재 코드에 근거한 지원 상태와 다음 개발 순서는 [Lifecycle 시나리오 점검 및 추가 개발 계획](docs/lifecycle-gap-analysis.md)을 기준으로 한다. 통합 ONNX batch 평가, 양자화 손실·target gap과 고급 Release evidence가 남아 있다.
 
