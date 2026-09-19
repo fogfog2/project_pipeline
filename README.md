@@ -83,6 +83,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - MMDetection fixture와 RTMDet·YOLOX 온보딩 문서
 - 결과 export API와 GitHub Pages용 정적 snapshot 경로(생성 시각·overview·artifact hash·평가 상세 포함, 원본 경로 제외)
 - 기존 자료를 연결하는 `vision-lifecycle-onboard` agent skill
+- `/api/v1/plugins`와 연결·설정 화면의 versioned adapter registry (dataset/inference/evaluator/storage/result-importer/runner)
 
 ## 빠른 시작
 
