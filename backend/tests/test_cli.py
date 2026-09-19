@@ -1,4 +1,7 @@
 import sys
+import os
+import sqlite3
+import subprocess
 from pathlib import Path
 
 from vision_lifecycle import cli
@@ -47,3 +50,14 @@ def test_cli_import_result_uses_same_manifest_contract(tmp_path: Path, monkeypat
     with SessionLocal() as session:
         run = session.query(Run).filter_by(external_run_id="CLI-1").one()
         assert run.model_id == model_id and run.metrics["bbox_AP50"] == 0.5
+
+
+def test_cli_migrate_creates_versioned_registry(tmp_path: Path):
+    db_path = tmp_path / "migrated.sqlite"
+    environment = {**os.environ, "VISION_LIFECYCLE_DB": str(db_path), "PYTHONPATH": str(Path(__file__).parents[1])}
+    result = subprocess.run([sys.executable, "-m", "vision_lifecycle.cli", "migrate"], cwd=Path(__file__).parents[2], env=environment, capture_output=True, text=True, check=True)
+    assert "Registry migrations applied" in result.stdout
+    with sqlite3.connect(db_path) as connection:
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        assert revision == "2624aaa6dd5c"
+        assert connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'").fetchone()

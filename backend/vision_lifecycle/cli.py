@@ -23,6 +23,33 @@ from .service import safe_export, seed_demo
 from . import schemas as contract_schemas
 
 
+def _alembic_config():
+    from alembic.config import Config
+
+    root = Path(__file__).resolve().parents[2]
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "migrations"))
+    return config
+
+
+def migrate_database() -> None:
+    """Upgrade a new registry, or stamp an existing 0.1 registry baseline."""
+    from alembic import command
+    from sqlalchemy import inspect
+
+    config = _alembic_config()
+    tables = set(inspect(engine).get_table_names())
+    if "projects" in tables and "alembic_version" not in tables:
+        # Existing starter registries were created by create_all plus the
+        # compatibility columns in init_database. They already represent the
+        # initial revision, so record that fact without attempting to recreate
+        # their tables.
+        init_database()
+        command.stamp(config, "head")
+    else:
+        command.upgrade(config, "head")
+
+
 def _json(value: object) -> None:
     print(json.dumps(value, default=str, ensure_ascii=False, indent=2))
 
@@ -71,6 +98,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="visionops", description="Vision lifecycle registry CLI")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="Create the local SQLite registry")
+    sub.add_parser("migrate", help="Apply Alembic migrations to the local registry")
     sub.add_parser("demo", help="Load the RTMDet and YOLOX onboarding demo")
     sub.add_parser("projects", help="List registered projects")
     schema = sub.add_parser("schemas", help="Print versioned registry JSON Schemas")
@@ -107,6 +135,10 @@ def main() -> None:
     restore.add_argument("--manifest", help="Optional backup manifest JSON (defaults to <input>.manifest.json)")
     args = parser.parse_args()
 
+    if args.command == "migrate":
+        migrate_database()
+        print("Registry migrations applied")
+        return
     init_database()
     if args.command == "inspect":
         _json(inspect_path(args.path)); return

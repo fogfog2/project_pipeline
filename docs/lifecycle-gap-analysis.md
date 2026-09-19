@@ -2,7 +2,7 @@
 
 > 후속 UI 점검과 빈 프로젝트 기반 실습 요구사항은 [실습형 Lifecycle 통합 계획](guided-lifecycle-plan.md)에 통합했다. 본 문서는 코드 감사 근거와 A–G 기술 작업 분류로 유지하며, 최신 사용자 흐름과 구현 순서는 통합 계획을 따른다.
 
-최신 보수: 프로젝트/Git/기준 브랜치 설정 편집, 버전 있는 recipe 계약과 recipe 조회 API, POSIX runner process-group 취소, cursor 기반 Job 로그 API, overview의 저장된 근거별 readiness와 모델 provenance 누락 표시가 추가됐다. 아래 표의 항목은 여전히 전체 사용자 시나리오 기준의 남은 범위를 나타낸다.
+최신 보수: 프로젝트/Git/기준 브랜치 설정 편집, 버전 있는 recipe 계약과 recipe 조회 API, POSIX runner process-group 취소, cursor 기반 Job 로그 API, overview의 저장된 근거별 readiness와 모델 provenance 누락 표시, Alembic baseline 및 `visionops migrate`가 추가됐다. 아래 표의 항목은 여전히 전체 사용자 시나리오 기준의 남은 범위를 나타낸다.
 
 점검 기준: `586b534` 커밋의 소스와 테스트. 기준 문서: `../On-device_Vision_AI_Lifecycle_Management_Plan.md` 전체 22개 절 및 사용자 후속 요구사항.
 
@@ -61,7 +61,7 @@ DB를 사용하지 않는 gate 함수로 아래 문제를 직접 재현했다.
 | S20 | 후속 요구: RTMDet·YOLOX 실제 예제 | 부분 구현·실모델 미검증 | COCO annotation·수기 예측 fixture 및 다운로드 recipe, 별도 classification/detection 실행 ONNX smoke fixture와 입력 records를 제공한다. 예제 이미지/실제 두 모델의 native→ONNX→평가 E2E 없음. MMDetection/MMDeploy 어댑터 존재와 실행 성공은 별개 |
 | S21 | 후속 요구: API/CLI/agent 동일 서비스 | 부분 구현 | `schemas/v1` JSON Schema와 API/CLI schema registry를 제공하고 agent가 같은 계약을 사용할 수 있다. API와 동일한 result manifest 검증·idempotency·lineage 참조를 `visionops import-result`로 제공한다. CLI 등록 경로의 공통 service화·formal adapter registry·전체 contract suite는 남아 있다 |
 | S22 | 후속 요구: Pages 실제 결과 조회 | 부분 구현·정확성 보완 필요 | API/CLI export와 Pages workflow가 생성 시각·overview·artifact hash·평가 상세를 포함하고 경로/중첩 details의 path·command·secret 계열 키를 제거한다. workflow_dispatch에서 demo 또는 커밋된 특정 export snapshot 경로를 선택하고 필수 키/redaction 계약을 검사한다. 중첩 자유값 전체 allowlist와 정적 화면의 상세 리포트는 추가 필요 |
-| S23 | 후속 요구: 백업·복구·경로 이동 | 부분 구현 | CLI backup/restore가 SQLite integrity와 프로젝트·Storage ID·artifact hash manifest를 함께 검증한다. Alembic 기반 migration과 외부 managed artifact 파일/Storage root 이동 검증은 남아 있다 |
+| S23 | 후속 요구: 백업·복구·경로 이동 | 부분 구현 | CLI backup/restore가 SQLite integrity와 프로젝트·Storage ID·artifact hash manifest를 함께 검증하고, Alembic baseline 및 `visionops migrate`로 새 DB/기존 0.1 registry schema를 버전화한다. 외부 managed artifact 파일 자체의 backup/restore와 Storage root 이동 후 모든 참조 파일을 재검증하는 작업은 남아 있다 |
 
 §1–3·15·17·19–21의 목표/아키텍처/수용 기준은 위 S01–S23의 통합 완료로 판단한다. §16의 추천 도구는 의무 설치 항목이 아니며 §18의 일정은 기존 예시로만 취급한다. §22 외부 참고 링크의 현재 제품 기능은 이번 코드 감사에서 재검증하지 않았다.
 

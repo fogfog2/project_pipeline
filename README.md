@@ -92,6 +92,7 @@ Python과 Node.js/npm이 설치된 Linux 환경에서 실행한다.
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
+visionops migrate
 ./scripts/run-local.sh
 ```
 
@@ -136,6 +137,8 @@ visionops restore --input backups/registry.sqlite
 모델을 baseline 또는 candidate로 승격·교체할 때는 `PATCH /api/v1/projects/{project_id}/models/{model_id}`에 `alias`와 선택적인 `alias_reason`을 보내고, 변경 이력은 `GET /api/v1/projects/{project_id}/models/{model_id}/alias-history`에서 확인한다. 기존 모델을 덮어쓰지 않고 이전 alias와 사유를 남기므로 비교 기준의 이동을 재현할 수 있다.
 
 `backup`은 SQLite 파일과 함께 `<output>.manifest.json`에 프로젝트·Storage ID와 artifact hash를 기록한다. `restore`는 이 manifest와 SQLite integrity를 검사해 ID/hash가 달라지면 실패한다. Pages 공개용 결과를 만들 때는 `export`를 사용하며, backup 파일에는 로컬 경로와 설정이 포함될 수 있으므로 공개 저장소에 올리지 않는다.
+
+DB schema 변경은 `migrations/versions/`의 Alembic revision으로 관리한다. 기존 0.1.x registry에서 `visionops migrate`를 처음 실행하면 호환 보정 상태를 현재 baseline revision으로 기록하고, 새 registry에서는 모든 테이블을 revision으로 생성한다. migration 전에는 backup을 만든다.
 
 ## RTMDet·YOLOX 사용 흐름
 
