@@ -170,21 +170,37 @@ def overview(session: Session, project_id: str) -> dict:
     }
 
 
-def compare_models(session: Session, baseline_id: str, candidate_id: str) -> dict:
+def compare_models(
+    session: Session,
+    baseline_id: str,
+    candidate_id: str,
+    baseline_evaluation_id: str | None = None,
+    candidate_evaluation_id: str | None = None,
+) -> dict:
     baseline = session.get(ModelVersion, baseline_id)
     candidate = session.get(ModelVersion, candidate_id)
     if not baseline or not candidate:
         raise LookupError("Model not found")
-    base_runs = session.scalars(select(Run).where(Run.model_id == baseline_id, Run.kind == "evaluation", Run.status == "completed").order_by(Run.created_at.desc())).all()
-    cand_runs = session.scalars(select(Run).where(Run.model_id == candidate_id, Run.kind == "evaluation", Run.status == "completed").order_by(Run.created_at.desc())).all()
+    if bool(baseline_evaluation_id) != bool(candidate_evaluation_id):
+        raise ValueError("baseline_evaluation_id and candidate_evaluation_id must be provided together")
+    if baseline_evaluation_id and candidate_evaluation_id:
+        base = session.get(Run, baseline_evaluation_id)
+        cand = session.get(Run, candidate_evaluation_id)
+        if not base or not cand or base.model_id != baseline_id or cand.model_id != candidate_id or base.kind != "evaluation" or cand.kind != "evaluation" or base.status != "completed" or cand.status != "completed":
+            raise LookupError("Selected evaluations must be completed evaluation runs for the selected models")
+        base_runs = [base]
+        cand_runs = [cand]
+    else:
+        base_runs = session.scalars(select(Run).where(Run.model_id == baseline_id, Run.kind == "evaluation", Run.status == "completed").order_by(Run.created_at.desc())).all()
+        cand_runs = session.scalars(select(Run).where(Run.model_id == candidate_id, Run.kind == "evaluation", Run.status == "completed").order_by(Run.created_at.desc())).all()
     mapping_matches = bool(
         baseline.metadata_json.get("class_mapping_version")
         and baseline.metadata_json.get("class_mapping_version") == candidate.metadata_json.get("class_mapping_version")
     )
     # Choose the newest pair that shares the complete evaluation contract. A
     # newer failed/incompatible run must not hide an older reproducible pair.
-    base = None
-    cand = None
+    base = base_runs[0] if baseline_evaluation_id else None
+    cand = cand_runs[0] if candidate_evaluation_id else None
     for base_candidate in base_runs:
         for cand_candidate in cand_runs:
             if (

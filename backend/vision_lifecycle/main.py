@@ -1648,9 +1648,11 @@ def queue_onnx_batch_evaluation(project_id: str, payload: OnnxBatchEvaluationCre
 @app.post("/api/v1/comparisons")
 def comparison(payload: ComparisonRequest, session: Session = Depends(get_session)):
     try:
-        result = compare_models(session, payload.baseline_model_id, payload.candidate_model_id)
+        result = compare_models(session, payload.baseline_model_id, payload.candidate_model_id, payload.baseline_evaluation_id, payload.candidate_evaluation_id)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
     return {key: as_dict(value) if hasattr(value, "__table__") else value for key, value in result.items()}
 
 

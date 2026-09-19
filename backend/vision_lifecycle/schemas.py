@@ -240,6 +240,8 @@ class RunCreate(BaseModel):
 class ComparisonRequest(BaseModel):
     baseline_model_id: str
     candidate_model_id: str
+    baseline_evaluation_id: str | None = None
+    candidate_evaluation_id: str | None = None
 
 
 class QuantizationComparisonRequest(BaseModel):

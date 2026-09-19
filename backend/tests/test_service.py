@@ -56,6 +56,28 @@ def test_comparison_ignores_incompatible_or_incomplete_latest_runs():
         assert comparison["candidate_evaluation"].name == "candidate compatible"
 
 
+def test_comparison_can_pin_explicit_evaluation_runs():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with SessionLocal() as session:
+        from vision_lifecycle.models import ModelVersion, Project, Run
+        project = Project(name="explicit-comparison")
+        session.add(project); session.flush()
+        baseline = ModelVersion(project_id=project.id, name="base", version="v1", family="fixture", task_kind="detection", format="external", alias="baseline", metadata_json={"class_mapping_version": "labels-v1"})
+        candidate = ModelVersion(project_id=project.id, name="candidate", version="v1", family="fixture", task_kind="detection", format="external", alias="candidate", metadata_json={"class_mapping_version": "labels-v1"})
+        session.add_all([baseline, candidate]); session.flush()
+        dataset = DatasetVersion(project_id=project.id, name="eval", version="v1", task_kind="detection", format="coco")
+        session.add(dataset); session.flush()
+        contract = {"evaluator_version": "v1", "protocol": "coco", "scope": "full"}
+        base_run = Run(project_id=project.id, model_id=baseline.id, kind="evaluation", name="base chosen", status="completed", dataset_id=dataset.id, config=contract, metrics={"bbox_mAP": 0.8})
+        candidate_run = Run(project_id=project.id, model_id=candidate.id, kind="evaluation", name="candidate chosen", status="completed", dataset_id=dataset.id, config=contract, metrics={"bbox_mAP": 0.7})
+        session.add_all([base_run, candidate_run]); session.commit()
+        result = compare_models(session, baseline.id, candidate.id, base_run.id, candidate_run.id)
+        assert result["baseline_evaluation"].id == base_run.id
+        assert result["candidate_evaluation"].id == candidate_run.id
+        assert result["delta"]["bbox_mAP"] == -0.1
+
+
 def test_detection_evaluator_explains_invalid_predictions():
     result = evaluate_coco_predictions(
         "examples/mmdetection/annotations/coco8.json",
