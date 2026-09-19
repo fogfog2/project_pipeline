@@ -4,6 +4,25 @@ from vision_lifecycle.models import DatasetVersion, ModelVersion, Project, Run
 from vision_lifecycle.evaluators.detection import evaluate_coco_predictions
 
 
+def test_report_keeps_whole_dataset_evaluations_separate():
+    from vision_lifecycle.service import evaluation_set_report, safe_export
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with SessionLocal() as session:
+        project = Project(name="separate-report")
+        session.add(project); session.flush()
+        datasets = [DatasetVersion(project_id=project.id, name="validation", version=version, task_kind="classification", format="classification-csv") for version in ("v1", "v2")]
+        session.add_all(datasets); session.flush()
+        for dataset in datasets:
+            session.add(Run(project_id=project.id, dataset_id=dataset.id, kind="evaluation", name=dataset.version, status="completed", metrics={"accuracy": 0.5}))
+        session.commit()
+        groups = evaluation_set_report(session, project.id)
+        assert len(groups) == 2
+        assert {group["dataset_version"] for group in groups} == {"v1", "v2"}
+        assert all(len(group["runs"]) == 1 for group in groups)
+        assert safe_export(session, project.id)["evaluation_set_report"] == groups
+
+
 def test_demo_has_comparable_models():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

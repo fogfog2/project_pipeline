@@ -301,16 +301,20 @@ def evaluation_set_report(session: Session, project_id: str) -> list[dict]:
         raise LookupError("Project not found")
     sets = {item.id: item for item in session.scalars(select(EvaluationSetVersion).where(EvaluationSetVersion.project_id == project_id)).all()}
     models = {item.id: item for item in session.scalars(select(ModelVersion).where(ModelVersion.project_id == project_id)).all()}
-    groups: dict[str, dict] = {}
+    datasets = {item.id: item for item in session.scalars(select(DatasetVersion).where(DatasetVersion.project_id == project_id)).all()}
+    groups: dict[tuple[str, str | None], dict] = {}
     for run in session.scalars(select(Run).where(Run.project_id == project_id, Run.kind == "evaluation", Run.status == "completed").order_by(Run.created_at)).all():
         config = run.config or {}
         set_id = config.get("evaluation_set_id") or "__dataset__"
         evaluation_set = sets.get(set_id)
-        group = groups.setdefault(set_id, {
+        dataset = datasets.get(run.dataset_id)
+        group = groups.setdefault((set_id, run.dataset_id), {
             "evaluation_set_id": None if set_id == "__dataset__" else set_id,
             "name": evaluation_set.name if evaluation_set else "Dataset 전체",
             "version": evaluation_set.version if evaluation_set else None,
             "dataset_id": run.dataset_id,
+            "dataset_name": dataset.name if dataset else "unknown",
+            "dataset_version": dataset.version if dataset else None,
             "runs": [],
         })
         model = models.get(run.model_id)
