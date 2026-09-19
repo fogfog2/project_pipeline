@@ -170,6 +170,26 @@ def test_external_worker_claim_records_lease_and_prevents_double_claim():
         assert claimed.attempt_count == 1
 
 
+def test_expired_worker_lease_is_requeued_before_next_claim():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    from datetime import UTC, datetime, timedelta
+    from vision_lifecycle.database import SessionLocal
+    from vision_lifecycle.models import Project
+    from vision_lifecycle.runner import reclaim_expired_leases
+    with SessionLocal() as session:
+        project = Project(name="expired-lease-project")
+        session.add(project); session.flush()
+        job = Job(project_id=project.id, runner_id="mock-board", command=["builtin:mock-board"], input_json={"_runner_args": []}, status="running", lease_owner="dead-worker", lease_expires_at=datetime.now(UTC) - timedelta(seconds=1), attempt_count=1)
+        session.add(job); session.commit(); job_id = job.id
+    assert reclaim_expired_leases() == 1
+    with SessionLocal() as session:
+        queued = session.get(Job, job_id)
+        assert queued.status == "queued"
+        assert queued.lease_owner is None
+        assert "lease expired" in queued.log
+
+
 def test_retry_keeps_queued_for_external_worker(monkeypatch):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

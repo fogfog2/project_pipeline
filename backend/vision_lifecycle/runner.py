@@ -234,8 +234,28 @@ def worker_identity() -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"
 
 
+def reclaim_expired_leases(*, now: datetime | None = None) -> int:
+    """Return abandoned running jobs to the queue after their lease expires.
+
+    Only ``running`` jobs are requeued. A job already marked ``cancelling`` is
+    left for its owning worker so a late process termination cannot create a
+    duplicate execution.
+    """
+    current_time = now or datetime.now(UTC)
+    with SessionLocal() as session:
+        jobs = session.scalars(select(Job).where(Job.status == "running", Job.lease_expires_at.is_not(None), Job.lease_expires_at <= current_time)).all()
+        for job in jobs:
+            job.status = "queued"
+            job.lease_owner = None
+            job.lease_expires_at = None
+            job.log = f"{job.log}Worker lease expired; job returned to queue.\n"
+        session.commit()
+        return len(jobs)
+
+
 def claim_next_job(worker_id: str | None = None, lease_seconds: int = 300) -> tuple[str, str, list[str]] | None:
     """Atomically claim one queued job and record its worker lease."""
+    reclaim_expired_leases()
     owner = worker_id or worker_identity()
     expires = datetime.now(UTC) + timedelta(seconds=max(10, lease_seconds))
     with SessionLocal() as session:
@@ -261,6 +281,7 @@ def worker_once(worker_id: str | None = None) -> bool:
 
 def run_worker(*, poll_seconds: float = 1.0, once: bool = False) -> None:
     recover_interrupted(include_queued=False)
+    reclaim_expired_leases()
     worker_id = worker_identity()
     while True:
         worked = worker_once(worker_id)
