@@ -45,6 +45,7 @@ from .split_validation import validate_split_definition
 from .calibration_validation import inspect_calibration_statistics, validate_calibration_definition
 from .evaluation_validation import validate_evaluation_definition
 from .board_validation import validate_board_measurement
+from .quantization_validation import validate_encoding_document
 from .storage import browse as browse_storage, inventory as inventory_storage, resolve_within, storage_status
 from .audit import record_audit
 
@@ -1029,6 +1030,16 @@ def create_quantization_run(project_id: str, payload: QuantizationRunCreate, ses
     _project_entity(session, ModelVersion, payload.output_model_id, project_id, "Output model")
     _project_entity(session, CalibrationSetVersion, payload.calibration_set_id, project_id, "Calibration set")
     values = payload.model_dump()
+    encoding_validation = None
+    if payload.encoding_path and Path(payload.encoding_path).is_file() and Path(payload.encoding_path).suffix.lower() == ".json":
+        try:
+            encoding_validation = validate_encoding_document(json.loads(Path(payload.encoding_path).read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError) as error:
+            raise HTTPException(422, f"Quantization encoding JSON could not be read: {error}") from error
+        if encoding_validation["status"] == "failed":
+            raise HTTPException(422, f"Invalid quantization encoding: {encoding_validation['errors']}")
+    if encoding_validation:
+        values["metadata_json"] = {**values.get("metadata_json", {}), "encoding_validation": encoding_validation}
     item = QuantizationRun(project_id=project_id, **values)
     session.add(item); session.flush()
     if payload.encoding_path:
@@ -1058,6 +1069,13 @@ def verify_quantization_encoding(project_id: str, quantization_id: str, session:
     if not artifact or artifact.project_id != project_id:
         raise HTTPException(422, "Quantization run has no registered encoding artifact")
     result = verify_artifact(artifact)
+    if result["status"] in {"verified", "managed"} and artifact.source_path and Path(artifact.source_path).suffix.lower() == ".json":
+        try:
+            contract = validate_encoding_document(json.loads(Path(artifact.source_path).read_text(encoding="utf-8")))
+            result["encoding_validation"] = contract
+            item.metadata_json = {**(item.metadata_json or {}), "encoding_validation": contract}
+        except (OSError, json.JSONDecodeError) as error:
+            result["encoding_validation"] = {"status": "failed", "errors": [str(error)]}
     session.commit()
     return {"quantization_id": item.id, "ok": result["status"] in {"verified", "managed"}, "artifact": result}
 

@@ -31,6 +31,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - `GET /api/v1/projects/{project_id}/jobs/{job_id}/logs?cursor=...`로 Unicode 안전한 cursor 기반 로그 증분 조회
 - typed QuantizationRun과 BoardBenchmark 등록·조회, calibration/model/target/evaluation lineage 검증
 - 양자화 encoding 파일을 별도 artifact로 hash 보존하고 실행·보드 화면에서 재검증
+- JSON encoding의 tensor/scale/min/max 계약을 등록 시 검증하고 검증 상태를 양자화 화면에 표시
 - Target Profile에 hardware와 firmware/accelerator/runtime metadata를 분리해 기록
 - 보드 raw output 파일을 summary metric과 분리한 artifact로 보존하고 hash를 재검증
 - 실험 화면에서 외부 training Run의 typed provenance(framework·commit·seed·split·label schema·unknown)와 dataset·config·metrics·environment·external ID를 등록하고 모델 연결에 재사용

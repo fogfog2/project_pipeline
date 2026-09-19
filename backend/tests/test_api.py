@@ -551,15 +551,17 @@ def test_quantization_encoding_artifact_is_registered_and_verified(tmp_path):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     encoding = tmp_path / "encoding.json"
-    encoding.write_text('{"scale": 0.25}', encoding="utf-8")
+    encoding.write_text('{"encodings": [{"name": "conv.weight", "scale": 0.25, "min": -1.0, "max": 1.0}]}', encoding="utf-8")
     with TestClient(app) as client:
         project_id = client.post("/api/v1/projects", json={"name": "encoding-artifact"}).json()["id"]
         model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "fp32", "version": "v1", "family": "fixture"}).json()
         created = client.post(f"/api/v1/projects/{project_id}/quantization-runs", json={"name": "int8", "source_model_id": model["id"], "encoding_path": str(encoding), "method": "ptq"})
         assert created.status_code == 201, created.text
         assert created.json()["metadata_json"]["encoding_artifact_id"]
+        assert created.json()["metadata_json"]["encoding_validation"]["status"] == "passed"
         verified = client.post(f"/api/v1/projects/{project_id}/quantization-runs/{created.json()['id']}/verify-encoding")
         assert verified.status_code == 200
+        assert verified.json()["artifact"]["encoding_validation"]["status"] == "passed"
         assert verified.json()["ok"] is True
 
 
