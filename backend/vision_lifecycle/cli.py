@@ -15,11 +15,10 @@ from .artifacts import register_artifact
 from .database import SessionLocal, engine, init_database
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot
-from .importer import manifest_hash, validate_result_manifest
 from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DatasetVersion, ModelVersion, Project, QuantizationRun, Run, StorageMapping, TargetProfile
 from .runner import run_worker
 from .serializers import as_dict
-from .service import safe_export, seed_demo
+from .service import import_result_manifest, safe_export, seed_demo
 from . import schemas as contract_schemas
 
 
@@ -244,35 +243,7 @@ def main() -> None:
         elif args.command == "import-result":
             if not session.get(Project, args.project_id):
                 raise ValueError("Project not found")
-            manifest = validate_result_manifest(_read_json(args.manifest))
-            references = (
-                ("dataset_id", DatasetVersion), ("model_id", ModelVersion), ("target_profile_id", TargetProfile),
-                ("quantization_run_id", QuantizationRun), ("calibration_set_id", CalibrationSetVersion),
-                ("board_benchmark_id", BoardBenchmark), ("parent_run_id", Run),
-            )
-            for field, entity_type in references:
-                identifier = manifest.get(field)
-                if identifier:
-                    entity = session.get(entity_type, identifier)
-                    if not entity or entity.project_id != args.project_id:
-                        raise ValueError(f"{field} does not belong to this project")
-            fingerprint = manifest_hash(manifest)
-            existing = session.scalar(select(Run).where(Run.project_id == args.project_id, Run.external_run_id == manifest["external_run_id"]))
-            if existing:
-                if existing.import_hash == fingerprint:
-                    _json({"status": "existing", "run": as_dict(existing)}); return
-                raise ValueError("An external run with this ID exists but its manifest content differs")
-            config = {**manifest.get("config", {})}
-            for field in ("target_profile_id", "quantization_run_id", "calibration_set_id", "board_benchmark_id"):
-                if manifest.get(field):
-                    config[field] = manifest[field]
-            run = Run(
-                project_id=args.project_id, kind=manifest["kind"], name=manifest["name"], status=manifest.get("status", "completed"),
-                dataset_id=manifest.get("dataset_id"), model_id=manifest.get("model_id"), parent_run_id=manifest.get("parent_run_id"),
-                external_run_id=manifest["external_run_id"], import_hash=fingerprint, config=config,
-                metrics=manifest.get("metrics", {}), details=manifest.get("details", {}), environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
-            )
-            session.add(run); session.commit(); session.refresh(run); _json({"status": "created", "run": as_dict(run)})
+            _json(import_result_manifest(session, args.project_id, _read_json(args.manifest)))
         elif args.command == "register-artifact":
             if not session.get(Project, args.project_id):
                 raise ValueError("Project not found")

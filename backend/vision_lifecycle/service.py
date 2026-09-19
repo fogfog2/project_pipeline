@@ -5,8 +5,68 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .audit import record_audit
+from .importer import manifest_hash, validate_result_manifest
 from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, FieldDataBatch, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, Project, QuantizationRun, Release, ReleaseEvidence, Run, SplitVersion, StorageMapping, TargetProfile
 from .dataset_snapshot import build_dataset_snapshot
+from .serializers import as_dict
+
+
+class ResultManifestConflict(ValueError):
+    """Raised when an external run ID is reused with different content."""
+
+
+class ResultManifestReferenceError(ValueError):
+    """Raised when a manifest points outside its project or to a missing entity."""
+
+
+def import_result_manifest(session: Session, project_id: str, value: dict) -> dict:
+    """Validate and persist an external result through the shared service path."""
+    manifest = validate_result_manifest(value)
+    references = (
+        ("dataset_id", DatasetVersion),
+        ("model_id", ModelVersion),
+        ("target_profile_id", TargetProfile),
+        ("quantization_run_id", QuantizationRun),
+        ("calibration_set_id", CalibrationSetVersion),
+        ("board_benchmark_id", BoardBenchmark),
+        ("parent_run_id", Run),
+    )
+    for field, entity_type in references:
+        identifier = manifest.get(field)
+        if identifier:
+            entity = session.get(entity_type, identifier)
+            if not entity or entity.project_id != project_id:
+                raise ResultManifestReferenceError(f"{field} does not belong to this project")
+    fingerprint = manifest_hash(manifest)
+    existing = session.scalar(select(Run).where(Run.project_id == project_id, Run.external_run_id == manifest["external_run_id"]))
+    if existing:
+        if existing.import_hash == fingerprint:
+            return {"status": "existing", "run": as_dict(existing)}
+        raise ResultManifestConflict("An external run with this ID exists but its manifest content differs")
+    linked_config = {key: value for key, value in (("target_profile_id", manifest.get("target_profile_id")), ("quantization_run_id", manifest.get("quantization_run_id")), ("calibration_set_id", manifest.get("calibration_set_id")), ("board_benchmark_id", manifest.get("board_benchmark_id"))) if value}
+    run = Run(
+        project_id=project_id,
+        kind=manifest["kind"],
+        name=manifest["name"],
+        status=manifest.get("status", "completed"),
+        dataset_id=manifest.get("dataset_id"),
+        model_id=manifest.get("model_id"),
+        parent_run_id=manifest.get("parent_run_id"),
+        external_run_id=manifest["external_run_id"],
+        import_hash=fingerprint,
+        config={**manifest.get("config", {}), **linked_config},
+        metrics=manifest.get("metrics", {}),
+        details=dict(manifest.get("details", {})),
+        environment=manifest.get("environment", {}),
+        notes=manifest.get("notes", ""),
+    )
+    session.add(run)
+    session.flush()
+    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
+    session.commit()
+    session.refresh(run)
+    return {"status": "created", "run": as_dict(run)}
 
 
 def overview(session: Session, project_id: str) -> dict:

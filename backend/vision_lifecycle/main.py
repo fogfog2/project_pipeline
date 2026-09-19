@@ -23,14 +23,13 @@ from .evaluators.classification import evaluate_classification
 from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
 from .inference.mmdetection import diagnose as diagnose_mmdetection, infer as infer_mmdetection
 from .inference.mmdeploy import diagnose as diagnose_mmdeploy, infer as infer_mmdeploy
-from .importer import manifest_hash, validate_result_manifest
 from .models import Artifact, AuditEvent, BoardBenchmark, CalibrationSetVersion, DataAsset, DatasetVersion, EvaluationSetVersion, FieldDataBatch, Job, LabelSchemaVersion, ModelAliasHistory, ModelVersion, OnboardingSession, Project, QuantizationRun, Release, ReleaseEvidence, Run, RunnerProfile, SplitVersion, StepProgress, StorageMapping, TargetProfile
 from .release_gate import GateConfigError, evaluate_gate
 from .runner import cancel, launch, recover_interrupted
 from .schemas import ArtifactCreate, BoardBenchmarkCreate, ClassificationEvaluationCreate, ComparisonRequest, DatasetCreate, DatasetUpdate, FieldDataBatchCreate, InferencePreviewRequest, JobCreate, ModelCreate, ModelUpdate, OnboardingCreate, OnnxBatchEvaluationCreate, PathInspectRequest, PredictionEvaluationCreate, ProjectCreate, ProjectUpdate, QuantizationComparisonRequest, QuantizationRunCreate, ReleaseCreate, ResultImportCreate, RunCreate, RunnerProfileCreate, StepProgressUpdate, StorageBrowseRequest, StorageInventoryRequest, StorageMappingCreate, StorageMappingUpdate, TargetProfileCreate, VersionDefinitionCreate
 from . import schemas as contract_schemas
 from .serializers import as_dict
-from .service import agent_request, compare_models, lineage, overview, safe_export, seed_demo
+from .service import ResultManifestConflict, ResultManifestReferenceError, agent_request, compare_models, import_result_manifest, lineage, overview, safe_export, seed_demo
 from .artifacts import register_artifact, verify_artifact
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot, diff_dataset_snapshots
@@ -1261,46 +1260,11 @@ def create_run(project_id: str, payload: RunCreate, response: Response, session:
 def import_result(project_id: str, payload: ResultImportCreate, session: Session = Depends(get_session)):
     require_project(session, project_id)
     try:
-        manifest = validate_result_manifest(payload.manifest)
-    except ValueError as error:
+        return import_result_manifest(session, project_id, payload.manifest)
+    except ResultManifestConflict as error:
+        raise HTTPException(409, str(error)) from error
+    except (ResultManifestReferenceError, ValueError) as error:
         raise HTTPException(422, str(error)) from error
-    dataset_id, model_id = manifest.get("dataset_id"), manifest.get("model_id")
-    if dataset_id and (not (dataset := session.get(DatasetVersion, dataset_id)) or dataset.project_id != project_id):
-        raise HTTPException(422, "Result manifest dataset_id does not belong to this project")
-    if model_id and (not (model := session.get(ModelVersion, model_id)) or model.project_id != project_id):
-        raise HTTPException(422, "Result manifest model_id does not belong to this project")
-    target_profile_id = manifest.get("target_profile_id")
-    if target_profile_id and (not (target := session.get(TargetProfile, target_profile_id)) or target.project_id != project_id):
-        raise HTTPException(422, "Result manifest target_profile_id does not belong to this project")
-    quantization_run_id = manifest.get("quantization_run_id")
-    if quantization_run_id and (not (quantization := session.get(QuantizationRun, quantization_run_id)) or quantization.project_id != project_id):
-        raise HTTPException(422, "Result manifest quantization_run_id does not belong to this project")
-    calibration_set_id = manifest.get("calibration_set_id")
-    if calibration_set_id and (not (calibration := session.get(CalibrationSetVersion, calibration_set_id)) or calibration.project_id != project_id):
-        raise HTTPException(422, "Result manifest calibration_set_id does not belong to this project")
-    board_benchmark_id = manifest.get("board_benchmark_id")
-    if board_benchmark_id and (not (benchmark := session.get(BoardBenchmark, board_benchmark_id)) or benchmark.project_id != project_id):
-        raise HTTPException(422, "Result manifest board_benchmark_id does not belong to this project")
-    parent_run_id = manifest.get("parent_run_id")
-    if parent_run_id and (not (parent := session.get(Run, parent_run_id)) or parent.project_id != project_id):
-        raise HTTPException(422, "Result manifest parent_run_id does not belong to this project")
-    fingerprint = manifest_hash(manifest)
-    existing = session.scalar(select(Run).where(Run.project_id == project_id, Run.external_run_id == manifest["external_run_id"]))
-    if existing:
-        if existing.import_hash == fingerprint:
-            return {"status": "existing", "run": as_dict(existing)}
-        raise HTTPException(409, "An external run with this ID exists but its manifest content differs")
-    details = dict(manifest.get("details", {}))
-    run = Run(
-        project_id=project_id, kind=manifest["kind"], name=manifest["name"], status=manifest.get("status", "completed"),
-        dataset_id=dataset_id, model_id=model_id, parent_run_id=parent_run_id,
-        external_run_id=manifest["external_run_id"], import_hash=fingerprint,
-        config={**manifest.get("config", {}), **({key: value for key, value in (("target_profile_id", target_profile_id), ("quantization_run_id", quantization_run_id), ("calibration_set_id", calibration_set_id), ("board_benchmark_id", board_benchmark_id)) if value})}, metrics=manifest.get("metrics", {}), details=details, environment=manifest.get("environment", {}), notes=manifest.get("notes", ""),
-    )
-    session.add(run); session.flush()
-    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
-    session.commit(); session.refresh(run)
-    return {"status": "created", "run": as_dict(run)}
 
 
 @app.post("/api/v1/projects/{project_id}/evaluations/predictions", status_code=201)
