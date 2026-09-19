@@ -565,6 +565,19 @@ def test_quantization_encoding_artifact_is_registered_and_verified(tmp_path):
         assert verified.json()["ok"] is True
 
 
+def test_quantization_encoding_rejects_duplicate_tensor_names_and_non_finite_values(tmp_path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    encoding = tmp_path / "invalid-encoding.json"
+    encoding.write_text('{"encodings": [{"name": "conv.weight", "scale": 0.25}, {"name": "conv.weight", "scale": 1e309}]}', encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "invalid-encoding"}).json()["id"]
+        model = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "model", "version": "v1", "family": "fixture"}).json()
+        response = client.post(f"/api/v1/projects/{project_id}/quantization-runs", json={"name": "bad", "source_model_id": model["id"], "encoding_path": str(encoding), "method": "ptq"})
+        assert response.status_code == 422
+        assert "duplicated" in response.text or "scale must be positive" in response.text
+
+
 def test_board_raw_output_artifact_is_registered_and_verified(tmp_path):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
