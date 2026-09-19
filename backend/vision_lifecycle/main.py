@@ -240,7 +240,7 @@ def create_project(payload: ProjectCreate, session: Session = Depends(get_sessio
     session.add(project); session.flush()
     # Guided projects are immediately usable: create their persisted checklist
     # together with the project so the first screen can explain the next action.
-    if project.mode == "guided":
+    if project.mode == "guided" or project.recipe_id in _RECIPE_STEPS:
         recipe_id = project.recipe_id if project.recipe_id in _RECIPE_STEPS else "blank"
         onboarding = OnboardingSession(project_id=project.id, recipe_id=recipe_id, recipe_version="1.0")
         session.add(onboarding); session.flush()

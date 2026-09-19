@@ -840,6 +840,16 @@ def test_guided_project_starts_with_persisted_onboarding_steps():
         assert [step["step_id"] for step in payload["steps"]][:3] == ["project", "storage", "data"]
 
 
+def test_explicit_blank_recipe_also_starts_a_resumable_checklist():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project = client.post("/api/v1/projects", json={"name": "blank-checklist", "recipe_id": "blank"}).json()
+        payload = client.get(f"/api/v1/projects/{project['id']}/onboarding").json()
+        assert payload["session"]["recipe_id"] == "blank"
+        assert payload["steps"][-1]["step_id"] == "report"
+
+
 def test_audit_events_track_changes_and_export_redacts_paths():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
