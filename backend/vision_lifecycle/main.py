@@ -111,6 +111,18 @@ def list_recipes():
     ]
 
 
+@app.get("/api/v1/recipes/{recipe_id}")
+def recipe_definition(recipe_id: str):
+    """Expose the reviewable recipe contract without executing any action."""
+    allowed = {"blank", "mmdetection-onboarding", "classification-onboarding"}
+    if recipe_id not in allowed:
+        raise HTTPException(404, "Recipe not found")
+    path = Path(__file__).resolve().parents[2] / "recipes" / recipe_id / "recipe.yaml"
+    if not path.is_file():
+        raise HTTPException(404, "Recipe definition is not installed")
+    return {"id": recipe_id, "format": "yaml", "version": "1.0", "definition": path.read_text(encoding="utf-8")}
+
+
 _RECIPE_STEPS = {
     "blank": ["project", "storage", "data", "contracts", "model", "evaluation", "comparison", "report"],
     "mmdetection-onboarding": ["project", "storage", "data", "contracts", "rtmdet", "evaluation", "yolox", "comparison", "report"],

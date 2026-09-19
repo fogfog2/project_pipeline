@@ -1,0 +1,44 @@
+id: blank
+version: "1.0"
+task: unknown
+title: 내 프로젝트 연결
+prerequisites:
+  - local_api
+steps:
+  - id: project
+    purpose: 프로젝트와 task를 정한다. task는 unknown으로 시작할 수 있다.
+    action: project.create
+    expected_evidence: [project]
+  - id: storage
+    purpose: 서버/NAS 자료 위치를 논리적 Storage ID로 연결한다.
+    action: storage.create_and_validate
+    expected_evidence: [storage_mapping]
+  - id: data
+    purpose: 이미지·annotation 후보를 Dataset 초안으로 등록하고 검사한다.
+    action: dataset.create_and_validate
+    expected_evidence: [dataset_draft, source_fingerprint]
+  - id: contracts
+    purpose: label, split, evaluation, calibration 규격을 선택적으로 버전화한다.
+    action: versioned_contract.create
+    expected_evidence: [label_or_split_or_evaluation_or_calibration]
+  - id: model
+    purpose: 외부 모델·config·training run을 명시적으로 연결한다.
+    action: model.create
+    expected_evidence: [model_version]
+  - id: evaluation
+    purpose: prediction 또는 ONNX batch를 같은 평가 세트에서 실행한다.
+    action: evaluation.run
+    expected_evidence: [completed_evaluation]
+  - id: comparison
+    purpose: baseline과 candidate를 호환 조건에서 비교한다.
+    action: comparison.create
+    expected_evidence: [compatible_comparison]
+  - id: report
+    purpose: Release 결정과 안전한 export를 기록한다.
+    action: release.create_and_export
+    expected_evidence: [release, public_snapshot]
+troubleshooting:
+  - condition: source path unavailable
+    action: storage.validate_or_remap
+  - condition: evaluation incompatible
+    action: reuse_same_dataset_evaluator_and_evaluation_set

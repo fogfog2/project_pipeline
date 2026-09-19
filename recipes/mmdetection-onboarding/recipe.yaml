@@ -1,0 +1,41 @@
+id: mmdetection-onboarding
+version: "1.0"
+task: detection
+title: RTMDet-tiny와 YOLOX-s 연결 실습
+prerequisites:
+  - local_api
+  - examples/mmdetection/annotations/coco8.json
+  - optional_mmdetection_3_3
+source_policy: models are downloaded by the user and never bundled in the registry or Pages snapshot
+steps:
+  - id: data
+    action: dataset.create_and_validate
+    input: examples/mmdetection/dataset.json
+    expected_evidence: [coco_dataset_draft, class_mapping]
+  - id: rtmdet
+    action: model.create
+    input: examples/mmdetection/models.json#RTMDet-tiny
+    expected_evidence: [config_artifact, checkpoint_artifact, model_version]
+  - id: evaluation
+    action: evaluation.run
+    input: examples/mmdetection/predictions/rtmdet-tiny.json
+    expected_evidence: [completed_evaluation, coco_metrics]
+  - id: yolox
+    action: model.create
+    input: examples/mmdetection/models.json#YOLOX-s
+    expected_evidence: [config_artifact, checkpoint_artifact, model_version]
+  - id: comparison
+    action: comparison.create
+    expected_evidence: [same_dataset_and_evaluator_comparison]
+artifacts:
+  - path: examples/mmdetection/annotations/coco8.json
+    source: synthetic_fixture_metadata
+  - path: examples/mmdetection/predictions/rtmdet-tiny.json
+    source: imported_fixture
+  - path: examples/mmdetection/predictions/yolox-s.json
+    source: imported_fixture
+troubleshooting:
+  - condition: checkpoint not found
+    action: bash examples/mmdetection/scripts/prepare-official-models.sh <destination>
+  - condition: COCO category IDs differ from model labels
+    action: record_explicit_class_mapping_and_reinspect

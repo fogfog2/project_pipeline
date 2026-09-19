@@ -269,6 +269,18 @@ def test_project_connection_settings_are_editable_and_persisted():
         assert persisted["default_branch"] == "main"
 
 
+def test_recipe_contract_is_read_only_and_versioned():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/recipes/mmdetection-onboarding")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["version"] == "1.0"
+        assert "RTMDet-tiny" in body["definition"]
+        assert client.get("/api/v1/recipes/unknown-recipe").status_code == 404
+
+
 def test_result_import_is_idempotent_and_detects_conflict():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

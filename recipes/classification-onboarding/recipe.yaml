@@ -1,0 +1,21 @@
+id: classification-onboarding
+version: "1.0"
+task: classification
+title: 분류 모델 연결 실습
+prerequisites:
+  - local_api
+  - examples/fixtures/classification_mean.onnx
+steps:
+  - id: data
+    action: dataset.create_and_validate
+    expected_evidence: [classification_dataset_draft]
+  - id: model
+    action: model.create
+    input: examples/fixtures/classification_mean.onnx
+    expected_evidence: [onnx_profile, model_version]
+  - id: evaluation
+    action: evaluation.onnx_batch
+    expected_evidence: [top1_accuracy, confusion_matrix]
+  - id: comparison
+    action: comparison.create
+    expected_evidence: [compatible_comparison]
