@@ -197,3 +197,46 @@ def evaluate_onnx_batch_file(session: Session, project_id: str, *, model_id: str
     session.commit()
     session.refresh(run)
     return {"run": as_dict(run), "result": {"metric_scope": result.get("metric_scope", "classification"), **details}}
+
+
+def evaluate_classification_records(session: Session, project_id: str, *, model_id: str, dataset_id: str | None, records: list[dict[str, Any]], evaluator_version: str = "classification-v1", evaluation_set_id: str | None = None) -> dict[str, Any]:
+    model = session.get(ModelVersion, model_id)
+    if not model or model.project_id != project_id or model.task_kind != "classification":
+        raise ValueError("A classification model from this project is required")
+    dataset = session.get(DatasetVersion, dataset_id) if dataset_id else None
+    if dataset_id and (not dataset or dataset.project_id != project_id):
+        raise ValueError("Dataset must belong to this project")
+    if dataset and dataset.class_names:
+        known = {str(value) for value in dataset.class_names}
+        supplied = {str(record.get(key)) for record in records for key in ("ground_truth", "prediction") if record.get(key) is not None}
+        unknown = sorted(supplied - known)
+        if unknown:
+            raise ValueError(f"Classification labels are not in the Dataset class mapping: {', '.join(unknown)}")
+    _ensure_source_current(dataset) if dataset else None
+    evaluation_set = session.get(EvaluationSetVersion, evaluation_set_id) if evaluation_set_id else None
+    if evaluation_set_id and (not evaluation_set or evaluation_set.project_id != project_id):
+        raise ValueError("Evaluation set must belong to this project")
+    if evaluation_set and evaluation_set.dataset_id != dataset_id:
+        raise ValueError("Evaluation set must reference the selected DatasetVersion")
+    item_keys = None
+    if evaluation_set:
+        definition = evaluation_set.definition or {}
+        raw = next((definition[key] for key in ("items", "image_ids") if key in definition), None)
+        if raw is not None:
+            if not isinstance(raw, list) or not raw:
+                raise ValueError("Evaluation set must contain at least one item")
+            item_keys = {str(item.get("image_id", item.get("item_id", item.get("id"))) if isinstance(item, dict) else item) for item in raw}
+            records = [record for record in records if str(record.get("image_id", record.get("item_id", record.get("id", "")))) in item_keys]
+            if not records:
+                raise ValueError("Evaluation set selected no classification records")
+    result = evaluate_classification(records)
+    if evaluation_set:
+        result["evaluation_set_filter"] = {"evaluation_set_id": evaluation_set.id, "selected_item_count": len(item_keys) if item_keys is not None else "all", "evaluated_record_count": result.get("records", 0)}
+    metric_keys = {"top1_accuracy", "topk_accuracy", "macro_precision", "macro_recall", "macro_f1", "records", "expected_calibration_error"}
+    run = Run(project_id=project_id, kind="evaluation", name=f"{model.family} classification evaluation", status="completed", dataset_id=dataset_id, model_id=model.id, config={"evaluator_version": evaluator_version, "task_kind": "classification", **({"evaluation_set_id": evaluation_set.id} if evaluation_set else {})}, metrics={key: result[key] for key in metric_keys if key in result}, details=result, environment={"source": "external-classification-records"}, notes="Per-class and confusion matrix output is returned by this import response.")
+    session.add(run)
+    session.flush()
+    record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "dataset_id": run.dataset_id, "model_id": run.model_id})
+    session.commit()
+    session.refresh(run)
+    return {"run": as_dict(run), "result": result}

@@ -1353,6 +1353,30 @@ def evaluate_classification_records(project_id: str, payload: ClassificationEval
     return {"run": as_dict(run), "result": result}
 
 
+@app.post("/api/v1/projects/{project_id}/evaluations/classification/jobs", status_code=201)
+def queue_classification_evaluation(project_id: str, payload: ClassificationEvaluationCreate, session: Session = Depends(get_session)):
+    require_project(session, project_id)
+    model = session.get(ModelVersion, payload.model_id)
+    if not model or model.project_id != project_id or model.task_kind != "classification":
+        raise HTTPException(422, "A classification model from this project is required")
+    dataset = session.get(DatasetVersion, payload.dataset_id) if payload.dataset_id else None
+    if payload.dataset_id and (not dataset or dataset.project_id != project_id):
+        raise HTTPException(422, "Dataset must belong to this project")
+    evaluation_set = _project_entity(session, EvaluationSetVersion, payload.evaluation_set_id, project_id, "Evaluation set")
+    if evaluation_set and evaluation_set.dataset_id != payload.dataset_id:
+        raise HTTPException(422, "Evaluation set must reference the selected DatasetVersion")
+    if dataset:
+        _ensure_dataset_source_current(dataset)
+    input_json = {**payload.model_dump(), "project_id": project_id, "_runner_args": []}
+    job = Job(project_id=project_id, runner_id="builtin:evaluate-classification", command=["builtin:evaluate-classification"], input_json=input_json, status="queued")
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    if os.environ.get("VISION_LIFECYCLE_EXTERNAL_WORKER", "false").lower() != "true":
+        launch(job, [])
+    return as_dict(job)
+
+
 @app.post("/api/v1/projects/{project_id}/evaluations/onnx-batch", status_code=201)
 def evaluate_onnx_batch(project_id: str, payload: OnnxBatchEvaluationCreate, session: Session = Depends(get_session)):
     """Run an explicitly profiled ONNX model over image records and persist one evaluation Run."""

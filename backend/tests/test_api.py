@@ -585,7 +585,7 @@ def test_quantization_loss_and_target_gap_require_compatible_evaluations():
         assert comparison.json()["comparison"]["target_gap"] == 0.1
 
 
-def test_classification_evaluation_api():
+def test_classification_evaluation_api(monkeypatch):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     with TestClient(app) as client:
@@ -599,6 +599,12 @@ def test_classification_evaluation_api():
         assert response.json()["result"]["top1_accuracy"] == 0.5
         runs = client.get(f"/api/v1/projects/{project_id}/runs").json()
         assert runs[0]["details"]["confusion_matrix"]["dog"]["cat"] == 1
+        monkeypatch.setenv("VISION_LIFECYCLE_EXTERNAL_WORKER", "true")
+        queued = client.post(f"/api/v1/projects/{project_id}/evaluations/classification/jobs", json={"model_id": model["id"], "records": [{"image_id": "3", "ground_truth": "cat", "prediction": "cat"}]})
+        assert queued.status_code == 201
+        from vision_lifecycle.runner import worker_once
+        assert worker_once("classification-worker") is True
+        assert client.get(f"/api/v1/projects/{project_id}/jobs").json()[0]["status"] == "completed"
 
 
 def test_classification_dataset_mapping_rejects_unknown_label():

@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from .database import SessionLocal
-from .evaluation_service import evaluate_coco_prediction_file, evaluate_onnx_batch_file
+from .evaluation_service import evaluate_classification_records, evaluate_coco_prediction_file, evaluate_onnx_batch_file
 from sqlalchemy import select, update
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -205,6 +205,24 @@ def _run_onnx_batch_evaluation(job_id: str) -> None:
         _append_log(job_id, f"ONNX batch evaluation failed: {error}\n", status="failed")
 
 
+def _run_classification_evaluation(job_id: str) -> None:
+    _append_log(job_id, "Classification evaluation started.\n", status="running")
+    with SessionLocal() as session:
+        job = session.get(Job, job_id)
+        payload = dict(job.input_json or {}) if job else {}
+        project_id = job.project_id if job else None
+    if not project_id:
+        _append_log(job_id, "Classification evaluation job project was not found.\n", status="failed")
+        return
+    try:
+        with SessionLocal() as session:
+            result = evaluate_classification_records(session, project_id, model_id=str(payload["model_id"]), dataset_id=payload.get("dataset_id"), records=list(payload["records"]), evaluator_version=str(payload.get("evaluator_version", "classification-v1")), evaluation_set_id=payload.get("evaluation_set_id"))
+        run = result.get("run", {})
+        _append_log(job_id, "Classification evaluation completed.\n", status="completed", result={"run_id": run.get("id"), "metrics": result.get("result", {})})
+    except (KeyError, OSError, RuntimeError, ValueError, TypeError) as error:
+        _append_log(job_id, f"Classification evaluation failed: {error}\n", status="failed")
+
+
 def _run_profile(job_id: str, profile_id: str, args: list[str]) -> None:
     with SessionLocal() as session:
         profile = session.get(RunnerProfile, profile_id)
@@ -277,6 +295,8 @@ def run_job(job_id: str, runner_id: str, args: list[str]) -> None:
         _run_prediction_evaluation(job_id)
     elif runner_id == "builtin:evaluate-onnx-batch":
         _run_onnx_batch_evaluation(job_id)
+    elif runner_id == "builtin:evaluate-classification":
+        _run_classification_evaluation(job_id)
     else:
         _run_profile(job_id, runner_id, args)
 
