@@ -332,6 +332,18 @@ def test_recipe_list_matches_onboarding_step_engine():
         assert recipes["mmdetection-onboarding"] == [item["step_id"] for item in session["steps"]]
 
 
+def test_plugin_endpoint_exposes_versioned_adapter_registry():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        plugins = client.get("/api/v1/plugins")
+        assert plugins.status_code == 200
+        onnx = next(item for item in plugins.json() if item["id"] == "onnx")
+        assert onnx["kind"] == "inference"
+        assert onnx["contract_version"] == "1.0"
+        assert "batch-evaluation" in onnx["capabilities"]
+
+
 def test_classification_evaluation_blocks_changed_dataset_source(tmp_path):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

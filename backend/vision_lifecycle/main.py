@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from .database import SessionLocal, init_database
 from .adapters.coco import load_coco, validate_coco
 from .adapters.inspect import inspect_path
+from .adapters.registry import list_adapters
 from .evaluators.detection import evaluate_coco_full, evaluate_coco_predictions
 from .evaluators.classification import evaluate_classification
 from .inference.onnx import diagnose as diagnose_onnx, infer as infer_onnx
@@ -76,14 +77,7 @@ def health():
 
 @app.get("/api/v1/plugins")
 def plugins():
-    return [
-        {"id": "coco", "kind": "dataset", "tasks": ["detection"], "capabilities": ["inspect", "validate", "prediction-evaluation", "onnx-batch-evaluation"]},
-        {"id": "yolo-txt", "kind": "dataset", "tasks": ["detection"], "capabilities": ["inspect", "validate"]},
-        {"id": "classification", "kind": "dataset", "tasks": ["classification"], "capabilities": ["inspect", "validate", "onnx-batch-evaluation"]},
-        {"id": "mmdetection", "kind": "model", "tasks": ["detection"], "capabilities": ["register", "native-inference", "external-result-import"]},
-        {"id": "mmdeploy", "kind": "model", "tasks": ["detection"], "capabilities": ["runtime-inference", "target-profile"]},
-        {"id": "mock-board", "kind": "runner", "tasks": ["detection", "classification"], "capabilities": ["run", "result-contract"]},
-    ]
+    return list_adapters()
 
 
 @app.get("/api/v1/schemas")
