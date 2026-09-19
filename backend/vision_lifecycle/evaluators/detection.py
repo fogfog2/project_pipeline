@@ -60,6 +60,17 @@ def _prediction_error(item: object, image_ids: set[int], category_ids: set[int])
     return None
 
 
+def _invalid_example(index: int, prediction: object, reason: str) -> dict:
+    """Keep invalid prediction diagnostics useful without copying arbitrary input."""
+    example: dict[str, object] = {"index": index, "reason": reason}
+    if isinstance(prediction, dict):
+        for key in ("image_id", "category_id", "score"):
+            value = prediction.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                example[key] = value
+    return example
+
+
 def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou_threshold: float = 0.5, image_ids: set[int] | None = None) -> dict:
     """A small, dependency-free COCO-style AP@IoU evaluator for onboarding fixtures.
 
@@ -85,7 +96,7 @@ def evaluate_coco_predictions(annotation_path: str, predictions: list[dict], iou
         if reason:
             invalid_predictions += 1
             if len(invalid_prediction_examples) < 50:
-                invalid_prediction_examples.append({"index": index, "reason": reason})
+                invalid_prediction_examples.append(_invalid_example(index, prediction, reason))
             continue
         grouped_predictions[prediction["category_id"]].append(prediction)
     per_class: dict[str, dict] = {}
@@ -167,7 +178,7 @@ def evaluate_coco_full(annotation_path: str, predictions: list[dict], image_ids:
         if reason:
             invalid += 1
             if len(invalid_examples) < 50:
-                invalid_examples.append({"index": index, "reason": reason})
+                invalid_examples.append(_invalid_example(index, item, reason))
             continue
         valid.append({key: item[key] for key in ("image_id", "category_id", "bbox", "score")})
     if not valid:

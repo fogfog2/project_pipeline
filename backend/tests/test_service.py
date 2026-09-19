@@ -69,3 +69,4 @@ def test_detection_evaluator_explains_invalid_predictions():
     assert {item["reason"] for item in result["invalid_prediction_examples"]} == {
         "bbox width and height must be positive", "unknown or invalid image_id", "score must be a finite number",
     }
+    assert any(item.get("image_id") == 999 for item in result["invalid_prediction_examples"])
