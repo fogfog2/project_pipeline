@@ -156,15 +156,15 @@ function App() {
         description: "가이드에 따라 빈 프로젝트에서 데이터·모델·평가를 연결하는 선택형 실습",
         task_kind: "detection", mode: "guided", recipe_id: "mmdetection-onboarding",
       }) });
-      await loadProjects(); await loadProject(project.id);
-      setMessage("빈 실습 프로젝트를 만들었습니다. 먼저 데이터 화면에서 이미지·annotation 경로를 연결하세요. 모델과 점수는 아직 등록되지 않았습니다.");
+      await loadProjects(); await loadProject(project.id); navigate("가이드", project.id);
+      setMessage("빈 실습 프로젝트를 만들었습니다. 가이드의 첫 단계부터 이미지·annotation 경로를 직접 연결하세요. 모델과 점수는 아직 등록되지 않았습니다.");
     } catch (error) { setMessage(`실습 프로젝트 생성 오류: ${String(error)}`); }
   };
   const createBlankProject = async (name: string, task: string) => {
     try {
       const project = await api<Project>("/projects", { method: "POST", body: JSON.stringify({ name, task_kind: task, mode: "user", recipe_id: "blank" }) });
-      await loadProjects(); await loadProject(project.id);
-      setMessage("빈 프로젝트를 만들었습니다. 다음 단계부터 자료를 직접 연결하세요.");
+      await loadProjects(); await loadProject(project.id); navigate("가이드", project.id);
+      setMessage("빈 프로젝트를 만들었습니다. 가이드에서 Storage와 Dataset을 순서대로 연결하세요.");
     } catch (error) { setMessage(`프로젝트 생성 오류: ${String(error)}`); }
   };
   const compare = async () => {
