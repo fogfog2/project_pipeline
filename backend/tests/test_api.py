@@ -708,6 +708,29 @@ def test_label_schema_rejects_duplicate_classes_and_unknown_mapping_targets():
         assert "not declared in classes" in str(unknown_target.json()["detail"])
 
 
+def test_label_schema_diff_reports_added_removed_renamed_and_mapping_changes():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "label-diff"}).json()["id"]
+        base = client.post(f"/api/v1/projects/{project_id}/label-schemas", json={
+            "name": "labels", "version": "v1", "classes": [{"id": 1, "name": "person"}, {"id": 2, "name": "car"}],
+            "mapping": {"person": 1, "car": 2},
+        }).json()
+        current = client.post(f"/api/v1/projects/{project_id}/label-schemas", json={
+            "name": "labels", "version": "v2", "parent_label_schema_id": base["id"],
+            "classes": [{"id": 1, "name": "pedestrian"}, {"id": 3, "name": "bike"}],
+            "mapping": {"pedestrian": 1, "bike": 3},
+        }).json()
+        diff = client.get(f"/api/v1/projects/{project_id}/label-schemas/{base['id']}/diff/{current['id']}")
+        assert diff.status_code == 200, diff.text
+        body = diff.json()
+        assert body["added"] == [{"id": 3, "name": "bike"}]
+        assert body["removed"] == [{"id": 2, "name": "car"}]
+        assert body["renamed"] == [{"id": "1", "from": "person", "to": "pedestrian"}]
+        assert {item["source"] for item in body["mapping_changes"]} == {"bike", "car", "pedestrian", "person"}
+
+
 def test_release_requires_compatible_baseline_for_regression_gate():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

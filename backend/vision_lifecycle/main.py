@@ -891,6 +891,25 @@ def create_label_schema(project_id: str, payload: VersionDefinitionCreate, sessi
     session.add(item); session.commit(); session.refresh(item); return as_dict(item)
 
 
+@app.get("/api/v1/projects/{project_id}/label-schemas/{label_schema_id}/diff/{other_id}")
+def diff_label_schemas(project_id: str, label_schema_id: str, other_id: str, session: Session = Depends(get_session)):
+    """Compare two immutable label contracts by class ID and mapping."""
+    require_project(session, project_id)
+    left = session.get(LabelSchemaVersion, label_schema_id)
+    right = session.get(LabelSchemaVersion, other_id)
+    if not left or left.project_id != project_id or not right or right.project_id != project_id:
+        raise HTTPException(404, "Label schema version not found")
+    left_classes = {str(item.get("id")): item for item in (left.classes or []) if isinstance(item, dict) and item.get("id") is not None}
+    right_classes = {str(item.get("id")): item for item in (right.classes or []) if isinstance(item, dict) and item.get("id") is not None}
+    added = [right_classes[key] for key in sorted(set(right_classes) - set(left_classes))]
+    removed = [left_classes[key] for key in sorted(set(left_classes) - set(right_classes))]
+    renamed = [{"id": key, "from": left_classes[key].get("name"), "to": right_classes[key].get("name")} for key in sorted(set(left_classes) & set(right_classes)) if left_classes[key].get("name") != right_classes[key].get("name")]
+    left_mapping = left.mapping or {}
+    right_mapping = right.mapping or {}
+    mapping_changes = [{"source": key, "from": left_mapping.get(key), "to": right_mapping.get(key)} for key in sorted(set(left_mapping) | set(right_mapping)) if left_mapping.get(key) != right_mapping.get(key)]
+    return {"from": {"id": left.id, "version": left.version}, "to": {"id": right.id, "version": right.version}, "added": added, "removed": removed, "renamed": renamed, "mapping_changes": mapping_changes}
+
+
 @app.get("/api/v1/projects/{project_id}/splits")
 def list_splits(project_id: str, session: Session = Depends(get_session)):
     require_project(session, project_id)
