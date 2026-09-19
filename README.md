@@ -157,6 +157,8 @@ visionops create-project project.json
 visionops create-dataset PRJ-... dataset-version.json
 visionops delete-dataset PRJ-... DS-...       # 참조 없는 draft만 삭제, 원본 파일 보존
 visionops create-model PRJ-... model-version.json
+visionops create-label-schema PRJ-... labels-v1.json
+visionops label-diff PRJ-... LABEL-v1 LABEL-v2
 visionops import-result PRJ-... result-manifest.json
 visionops register-artifact PRJ-... artifact.json
 visionops export PRJ-... --output pages/snapshot.json

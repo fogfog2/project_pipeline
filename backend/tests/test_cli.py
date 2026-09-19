@@ -1,12 +1,13 @@
 import sys
 import os
 import sqlite3
+import json
 import subprocess
 from pathlib import Path
 
 from vision_lifecycle import cli
 from vision_lifecycle.database import Base, SessionLocal, engine
-from vision_lifecycle.models import Artifact, ModelVersion, Project, Run
+from vision_lifecycle.models import Artifact, LabelSchemaVersion, ModelVersion, Project, Run
 
 
 def test_backup_restore_writes_and_verifies_registry_manifest(tmp_path: Path, monkeypatch):
@@ -75,6 +76,31 @@ def test_cli_delete_dataset_uses_safe_draft_policy(tmp_path: Path, monkeypatch, 
     assert source.is_dir()
     with SessionLocal() as session:
         assert session.get(DatasetVersion, dataset_id) is None
+
+
+def test_cli_label_schema_create_and_diff_share_contract(tmp_path: Path, monkeypatch, capsys):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with SessionLocal() as session:
+        project = Project(name="cli-label-project")
+        session.add(project); session.commit(); project_id = project.id
+    first = tmp_path / "labels-v1.json"
+    first.write_text('{"name":"labels","version":"v1","classes":[{"id":1,"name":"person"}],"mapping":{"person":1}}', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["visionops", "create-label-schema", project_id, str(first)])
+    cli.main()
+    base_id = json.loads(capsys.readouterr().out)["id"]
+    second = tmp_path / "labels-v2.json"
+    second.write_text(f'{{"name":"labels","version":"v2","parent_label_schema_id":"{base_id}","classes":[{{"id":1,"name":"pedestrian"}},{{"id":2,"name":"bike"}}],"mapping":{{"pedestrian":1,"bike":2}}}}', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["visionops", "create-label-schema", project_id, str(second)])
+    cli.main()
+    current_id = json.loads(capsys.readouterr().out)["id"]
+    monkeypatch.setattr(sys, "argv", ["visionops", "label-diff", project_id, base_id, current_id])
+    cli.main()
+    output = json.loads(capsys.readouterr().out)
+    assert output["added"] == [{"id": 2, "name": "bike"}]
+    assert output["renamed"] == [{"id": "1", "from": "person", "to": "pedestrian"}]
+    with SessionLocal() as session:
+        assert session.get(LabelSchemaVersion, current_id).parent_label_schema_id == base_id
 
 
 def test_cli_migrate_creates_versioned_registry(tmp_path: Path):

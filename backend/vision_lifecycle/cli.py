@@ -16,7 +16,8 @@ from .artifacts import register_artifact
 from .database import SessionLocal, engine, init_database
 from .fingerprints import dataset_fingerprint, file_sha256
 from .dataset_snapshot import build_dataset_snapshot
-from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DatasetVersion, ModelVersion, Project, QuantizationRun, Run, StorageMapping, TargetProfile
+from .models import Artifact, BoardBenchmark, CalibrationSetVersion, DatasetVersion, LabelSchemaVersion, ModelVersion, Project, QuantizationRun, Run, StorageMapping, TargetProfile
+from .label_validation import validate_label_schema
 from .runner import run_worker
 from .serializers import as_dict
 from .service import delete_draft_dataset, import_result_manifest, rewrite_storage_references, safe_export, seed_demo
@@ -168,6 +169,13 @@ def main() -> None:
     create_model = sub.add_parser("create-model", help="Register a ModelVersion from a JSON object")
     create_model.add_argument("project_id")
     create_model.add_argument("manifest")
+    create_label = sub.add_parser("create-label-schema", help="Register a LabelSchemaVersion from a JSON object")
+    create_label.add_argument("project_id")
+    create_label.add_argument("manifest", help="JSON object with name, version, classes, and optional mapping")
+    label_diff = sub.add_parser("label-diff", help="Compare two LabelSchemaVersion contracts")
+    label_diff.add_argument("project_id")
+    label_diff.add_argument("from_id")
+    label_diff.add_argument("to_id")
     import_result = sub.add_parser("import-result", help="Register an external result manifest")
     import_result.add_argument("project_id")
     import_result.add_argument("manifest", help="JSON result manifest")
@@ -318,6 +326,30 @@ def main() -> None:
             if payload.get("config_path"):
                 register_artifact(session, args.project_id, kind="config", logical_name=f"{model.name}/{model.version}/config", owner_type="model", owner_id=model.id, source_path=payload["config_path"], sha256=payload["config_sha256"])
             session.commit(); session.refresh(model); _json(as_dict(model))
+        elif args.command == "create-label-schema":
+            if not session.get(Project, args.project_id):
+                raise ValueError("Project not found")
+            payload = _read_json(args.manifest)
+            errors = validate_label_schema(payload.get("classes", []), payload.get("mapping", {}))
+            if errors:
+                raise ValueError(f"Invalid label schema: {errors}")
+            parent_id = payload.get("parent_label_schema_id")
+            if parent_id:
+                parent = session.get(LabelSchemaVersion, parent_id)
+                if not parent or parent.project_id != args.project_id:
+                    raise ValueError("Parent label schema must belong to this project")
+            value = {"name": payload["name"], "version": payload["version"], "classes": payload.get("classes", []), "mapping": payload.get("mapping", {}), "dataset_id": payload.get("dataset_id"), "parent_label_schema_id": parent_id}
+            from .main import _version_hash
+            item = LabelSchemaVersion(project_id=args.project_id, parent_label_schema_id=parent_id, dataset_id=payload.get("dataset_id"), name=payload["name"], version=payload["version"], classes=value["classes"], mapping=value["mapping"], status=payload.get("status", "draft"), content_hash=_version_hash(value))
+            session.add(item); session.commit(); session.refresh(item); _json(as_dict(item))
+        elif args.command == "label-diff":
+            left = session.get(LabelSchemaVersion, args.from_id)
+            right = session.get(LabelSchemaVersion, args.to_id)
+            if not left or left.project_id != args.project_id or not right or right.project_id != args.project_id:
+                raise ValueError("Label schema version not found")
+            left_classes = {str(item.get("id")): item for item in (left.classes or []) if isinstance(item, dict) and item.get("id") is not None}
+            right_classes = {str(item.get("id")): item for item in (right.classes or []) if isinstance(item, dict) and item.get("id") is not None}
+            _json({"from": {"id": left.id, "version": left.version}, "to": {"id": right.id, "version": right.version}, "added": [right_classes[key] for key in sorted(set(right_classes) - set(left_classes))], "removed": [left_classes[key] for key in sorted(set(left_classes) - set(right_classes))], "renamed": [{"id": key, "from": left_classes[key].get("name"), "to": right_classes[key].get("name")} for key in sorted(set(left_classes) & set(right_classes)) if left_classes[key].get("name") != right_classes[key].get("name")], "mapping_changes": [{"source": key, "from": (left.mapping or {}).get(key), "to": (right.mapping or {}).get(key)} for key in sorted(set(left.mapping or {}) | set(right.mapping or {})) if (left.mapping or {}).get(key) != (right.mapping or {}).get(key)]})
         elif args.command == "import-result":
             if not session.get(Project, args.project_id):
                 raise ValueError("Project not found")
