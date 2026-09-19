@@ -47,6 +47,11 @@ def test_demo_api_validates_evaluates_and_redacts():
         assert any(edge["relation"] == "trained_from" for edge in graph.json()["edges"])
         assert any(node["kind"] == "artifact" for node in graph.json()["nodes"])
         assert any(edge["relation"] == "has_artifact" for edge in graph.json()["edges"])
+        csv_report = client.get(f"/api/v1/projects/{project_id}/reports/runs.csv")
+        html_report = client.get(f"/api/v1/projects/{project_id}/reports/summary.html")
+        assert csv_report.status_code == html_report.status_code == 200
+        assert "run_id" in csv_report.text and "RTMDet-tiny" in html_report.text
+        assert "/private" not in html_report.text
 
 
 def test_mock_board_job_completes():

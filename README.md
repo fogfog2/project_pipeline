@@ -90,6 +90,7 @@ Vision Lifecycle는 외부 학습 환경을 바꾸지 않고도 Vision AI 데이
 - `#/projects/:id/:page` hash routing으로 새로고침·뒤로가기·Pages 하위 경로 복원
 - MMDetection fixture와 RTMDet·YOLOX 온보딩 문서
 - 결과 export API와 GitHub Pages용 정적 snapshot 경로(생성 시각·overview·artifact hash·평가 상세 포함, 원본 경로 제외)
+- 로컬 Release 화면에서 redacted JSON·HTML 요약·Run CSV 리포트 다운로드 제공
 - 기존 자료를 연결하는 `vision-lifecycle-onboard` agent skill
 - `/api/v1/plugins`와 연결·설정 화면의 versioned adapter registry (dataset/inference/evaluator/storage/result-importer/runner)
 

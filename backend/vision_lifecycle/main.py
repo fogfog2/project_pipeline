@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import hashlib
+import csv
+import html
+import io
 import json
 import os
 from datetime import datetime
@@ -1764,6 +1767,27 @@ def export_project(project_id: str, session: Session = Depends(get_session)):
         return safe_export(session, project_id)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
+
+
+@app.get("/api/v1/projects/{project_id}/reports/runs.csv")
+def export_runs_csv(project_id: str, session: Session = Depends(get_session)):
+    """Export a portable, redacted run summary for spreadsheet review."""
+    snapshot = safe_export(session, project_id)
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=["run_id", "kind", "name", "status", "model_id", "dataset_id", "metrics", "config"])
+    writer.writeheader()
+    for run in snapshot["runs"]:
+        writer.writerow({"run_id": run.get("id", ""), "kind": run.get("kind", ""), "name": run.get("name", ""), "status": run.get("status", ""), "model_id": run.get("model_id", ""), "dataset_id": run.get("dataset_id", ""), "metrics": json.dumps(run.get("metrics", {}), ensure_ascii=False, sort_keys=True), "config": json.dumps(run.get("config", {}), ensure_ascii=False, sort_keys=True)})
+    return Response(content=output.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="vision-lifecycle-{project_id}-runs.csv"'})
+
+
+@app.get("/api/v1/projects/{project_id}/reports/summary.html")
+def export_summary_html(project_id: str, session: Session = Depends(get_session)):
+    """Render a self-contained redacted HTML report without API dependencies."""
+    snapshot = safe_export(session, project_id)
+    rows = "".join(f"<tr><td>{html.escape(str(run.get('name', '')))}</td><td>{html.escape(str(run.get('kind', '')))}</td><td>{html.escape(str(run.get('status', '')))}</td><td><code>{html.escape(json.dumps(run.get('metrics', {}), ensure_ascii=False, sort_keys=True))}</code></td></tr>" for run in snapshot["runs"])
+    document = f"<!doctype html><html lang=\"ko\"><meta charset=\"utf-8\"><title>Vision Lifecycle report</title><style>body{{font:14px system-ui;max-width:1100px;margin:2rem auto;padding:0 1rem}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ddd;padding:.5rem;text-align:left}}code{{white-space:pre-wrap}}</style><h1>{html.escape(str(snapshot['project'].get('name', 'Vision Lifecycle')))}</h1><p>생성 시각: {html.escape(str(snapshot.get('generated_at', '')))}</p><p>Lineage completeness: {html.escape(str(snapshot['overview'].get('lineage_completeness', 0)))}%</p><table><thead><tr><th>Run</th><th>Kind</th><th>Status</th><th>Metrics</th></tr></thead><tbody>{rows or '<tr><td colspan=4>평가 결과가 없습니다.</td></tr>'}</tbody></table></html>"
+    return Response(content=document, media_type="text/html; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="vision-lifecycle-{project_id}-report.html"'})
 
 
 @app.get("/")
