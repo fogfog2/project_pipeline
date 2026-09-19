@@ -1384,6 +1384,19 @@ def create_run(project_id: str, payload: RunCreate, response: Response, session:
         values["import_hash"] = import_hash
     run = Run(project_id=project_id, **values)
     session.add(run); session.flush()
+    if payload.training and payload.training.config_artifact_path:
+        config_artifact = register_artifact(
+            session,
+            project_id,
+            kind="training-config",
+            logical_name=f"{run.name}/config",
+            owner_type="run",
+            owner_id=run.id,
+            source_path=payload.training.config_artifact_path,
+            notes="External training configuration linked from typed provenance",
+        )
+        session.flush()
+        run.details = {**(run.details or {}), "training": {**(run.details.get("training", {})), "config_artifact_id": config_artifact.id}}
     record_audit(session, project_id, "run", run.id, "registered", after={"kind": run.kind, "name": run.name, "status": run.status, "external_run_id": run.external_run_id, "dataset_id": run.dataset_id, "model_id": run.model_id})
     session.commit(); session.refresh(run)
     return as_dict(run)

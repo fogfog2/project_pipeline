@@ -217,6 +217,7 @@ class TrainingRunPayload(BaseModel):
     seed: int | None = None
     split_id: str | None = None
     label_schema_id: str | None = None
+    config_artifact_path: str | None = None
     unknown_fields: list[str] = Field(default_factory=list)
 
 

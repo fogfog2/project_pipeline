@@ -805,6 +805,26 @@ def test_model_training_run_lineage_is_explicit():
         assert {edge["relation"] for edge in graph["edges"] if edge["target"] == model.json()["id"]} >= {"contains", "produced_by"}
 
 
+def test_training_config_path_is_managed_and_visible_in_lineage(tmp_path):
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    config_path = tmp_path / "rtmdet.py"
+    config_path.write_text("model = dict(type='RTMDet')\n", encoding="utf-8")
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "training-config"}).json()["id"]
+        run = client.post(f"/api/v1/projects/{project_id}/runs", json={
+            "kind": "training", "name": "rtmdet train", "status": "completed",
+            "training": {"framework": "MMDetection", "config_artifact_path": str(config_path)},
+        })
+        assert run.status_code == 201
+        payload = run.json()
+        artifact_id = payload["details"]["training"]["config_artifact_id"]
+        graph = client.get(f"/api/v1/projects/{project_id}/lineage").json()
+        artifact = next(node for node in graph["nodes"] if node["id"] == artifact_id)
+        assert artifact["kind"] == "artifact"
+        assert any(edge["source"] == payload["id"] and edge["target"] == artifact_id and edge["relation"] == "has_artifact" for edge in graph["edges"])
+
+
 def test_audit_events_track_changes_and_export_redacts_paths():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
