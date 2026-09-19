@@ -761,6 +761,23 @@ def test_release_requires_compatible_baseline_for_regression_gate():
         assert release.json()["gate_result"]["baseline_compatibility"]["status"] == "incomplete"
 
 
+def test_model_comparison_reports_each_contract_mismatch():
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        project_id = client.post("/api/v1/projects", json={"name": "comparison-contract"}).json()["id"]
+        dataset = client.post(f"/api/v1/projects/{project_id}/datasets", json={"name": "eval", "version": "v1"}).json()
+        baseline = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "base", "version": "v1", "family": "base", "metadata_json": {"class_mapping_version": "labels-v1"}}).json()
+        candidate = client.post(f"/api/v1/projects/{project_id}/models", json={"name": "candidate", "version": "v1", "family": "candidate", "metadata_json": {"class_mapping_version": "labels-v1"}}).json()
+        base_run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "base eval", "model_id": baseline["id"], "dataset_id": dataset["id"], "config": {"evaluator_version": "eval-v1", "protocol": "coco", "evaluation_set_id": "SET-1"}, "metrics": {"bbox_AP50": 0.6}}).json()
+        candidate_run = client.post(f"/api/v1/projects/{project_id}/runs", json={"kind": "evaluation", "name": "candidate eval", "model_id": candidate["id"], "dataset_id": dataset["id"], "config": {"evaluator_version": "eval-v2", "protocol": "coco", "evaluation_set_id": "SET-2"}, "metrics": {"bbox_AP50": 0.7}}).json()
+        result = client.post("/api/v1/comparisons", json={"baseline_model_id": baseline["id"], "candidate_model_id": candidate["id"], "baseline_evaluation_id": base_run["id"], "candidate_evaluation_id": candidate_run["id"]}).json()
+        assert result["compatible"] is False
+        assert result["compatibility_checks"]["dataset"] is True
+        assert result["compatibility_checks"]["evaluator"] is False
+        assert result["compatibility_checks"]["evaluation_set"] is False
+
+
 def test_release_captures_immutable_evidence_snapshots_and_required_types():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

@@ -49,6 +49,12 @@ def test_comparison_ignores_incompatible_or_incomplete_latest_runs():
             Run(project_id=project.id, kind="evaluation", name="candidate failed", status="failed", dataset_id=dataset.id, model_id=candidate.id, config={"evaluator_version": "other"}, metrics={"bbox_mAP": 0.99}),
         ])
         session.commit()
+        # Newer results with unknown datasets cannot hide a reproducible pair.
+        session.add_all([
+            Run(project_id=project.id, kind="evaluation", name="base unknown", status="completed", model_id=baseline.id, config=contract, metrics={"bbox_mAP": 0.99}),
+            Run(project_id=project.id, kind="evaluation", name="candidate unknown", status="completed", model_id=candidate.id, config=contract, metrics={"bbox_mAP": 1.0}),
+        ])
+        session.commit()
         comparison = compare_models(session, baseline.id, candidate.id)
         assert comparison["compatible"] is True
         assert comparison["delta"]["bbox_mAP"] == -0.05

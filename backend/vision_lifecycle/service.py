@@ -239,7 +239,8 @@ def compare_models(
     for base_candidate in base_runs:
         for cand_candidate in cand_runs:
             if (
-                base_candidate.dataset_id == cand_candidate.dataset_id
+                base_candidate.dataset_id is not None
+                and base_candidate.dataset_id == cand_candidate.dataset_id
                 and base_candidate.config == cand_candidate.config
                 and base_candidate.config.get("evaluator_version")
                 and base_candidate.config.get("evaluator_version") == cand_candidate.config.get("evaluator_version")
@@ -253,7 +254,15 @@ def compare_models(
         base = base_runs[0]
     if not cand and cand_runs:
         cand = cand_runs[0]
-    compatible = bool(base and cand and base.dataset_id == cand.dataset_id and base.config == cand.config and base.config.get("evaluator_version") and base.config.get("evaluator_version") == cand.config.get("evaluator_version") and mapping_matches)
+    compatibility_checks = {
+        "dataset": bool(base and cand and base.dataset_id and base.dataset_id == cand.dataset_id),
+        "evaluation_set": bool(base and cand and (base.config or {}).get("evaluation_set_id") == (cand.config or {}).get("evaluation_set_id")),
+        "evaluator": bool(base and cand and (base.config or {}).get("evaluator_version") and (base.config or {}).get("evaluator_version") == (cand.config or {}).get("evaluator_version")),
+        "protocol": bool(base and cand and (base.config or {}).get("protocol") == (cand.config or {}).get("protocol")),
+        "config": bool(base and cand and base.config == cand.config),
+        "class_mapping": mapping_matches,
+    }
+    compatible = bool(base and cand and all(compatibility_checks.values()))
     delta = {}
     metric_compatibility: dict[str, str] = {}
     if compatible:
@@ -280,6 +289,7 @@ def compare_models(
         "candidate_evaluation": cand,
         "compatible": compatible,
         "reason": None if compatible else "완료된 평가 중 동일 dataset version, evaluator/protocol 설정, class mapping version의 쌍이 필요합니다.",
+        "compatibility_checks": compatibility_checks,
         "delta": delta,
         "metric_compatibility": metric_compatibility,
     }
