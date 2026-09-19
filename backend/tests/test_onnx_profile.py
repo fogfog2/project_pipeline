@@ -22,6 +22,9 @@ def test_onnx_model_without_profile_is_not_marked_runnable():
         assert response.status_code == 201
         assert response.json()["runnable"] is False
         assert response.json()["metadata_json"]["adapter_status"] == "required"
+        updated = client.patch(f"/api/v1/projects/{project_id}/models/{response.json()['id']}", json={"runnable": True})
+        assert updated.status_code == 200
+        assert updated.json()["runnable"] is False
 
 
 def test_checked_in_onnx_fixtures_are_executable():

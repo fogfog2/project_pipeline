@@ -1224,6 +1224,13 @@ def update_model(project_id: str, model_id: str, payload: ModelUpdate, session: 
     previous_alias = model.alias
     for key, value in values.items():
         setattr(model, key, value)
+    if model.format in {"onnx", "mmdeploy"}:
+        profile_key = "onnx_profile" if model.format == "onnx" else "mmdeploy_profile"
+        metadata = dict(model.metadata_json or {})
+        if not metadata.get(profile_key):
+            model.runnable = False
+            metadata["adapter_status"] = "required"
+            model.metadata_json = metadata
     if "alias" in values and values["alias"] != previous_alias:
         session.add(ModelAliasHistory(project_id=project_id, model_id=model.id, previous_alias=previous_alias, new_alias=model.alias, reason=alias_reason))
     if "artifact_path" in values:
